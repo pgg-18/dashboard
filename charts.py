@@ -121,11 +121,28 @@ def cargo_chart(mode, figsize=(3.3, 2.2)):
     if mode == "Split":
         labels = ["Export", "Import", "Outbound", "Inbound"]
         values = [c["export"], c["import"], c["outbound"], c["inbound"]]
-        colors = [BURGUNDY, ACCENT_LIGHT, BURGUNDY_LIGHT, ACCENT]
+        # colour family signals the group: accent (red) = International,
+        # burgundy = Domestic — same language as the Pax/Flights split chart.
+        colors = [ACCENT, ACCENT_LIGHT, BURGUNDY, BURGUNDY_LIGHT]
         x = np.arange(4)
-        bars = ax.bar(x, values, width=0.55, color=colors)
+        bars = ax.bar(x, values, width=0.6, color=colors, zorder=3)
         ax.set_xticks(x)
         ax.set_xticklabels(labels, fontsize=6.4)
+
+        ymax = max(values) * 1.42
+        ax.set_ylim(0, ymax)
+
+        # shaded bands + a divider so the Export/Import vs Outbound/Inbound
+        # grouping is visible even before reading the labels
+        ax.axvspan(-0.5, 1.5, color=ACCENT_LIGHT, alpha=0.15, zorder=0)
+        ax.axvspan(1.5, 3.5, color=BURGUNDY_LIGHT, alpha=0.15, zorder=0)
+        ax.axvline(1.5, color="#ccc", linewidth=0.8, zorder=1)
+
+        # explicit group headers above each pair of bars
+        ax.text(0.5, ymax * 0.94, "INTERNATIONAL", ha="center", va="top",
+                fontsize=6.3, fontweight="bold", color=ACCENT)
+        ax.text(2.5, ymax * 0.94, "DOMESTIC", ha="center", va="top",
+                fontsize=6.3, fontweight="bold", color=BURGUNDY)
     else:
         intl_total = c["export"] + c["import"]
         dom_total = c["outbound"] + c["inbound"]
