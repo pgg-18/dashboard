@@ -54,6 +54,10 @@ def _fmt_k(n):
     return str(n)
 
 
+def _fmt_exact(n):
+    return f"{int(round(n)):,}"
+
+
 def pax_or_flights_chart(field_prefix, mode, figsize=(3.6, 3.55)):
     """field_prefix: 'pax' or 'flights'. mode: 'Total' or 'Split'."""
     airports = D.TOP20_AIRPORTS
@@ -66,12 +70,17 @@ def pax_or_flights_chart(field_prefix, mode, figsize=(3.6, 3.55)):
 
     if mode == "Split":
         h = 0.38
-        ax.barh(y + h/2, dom, height=h, color=BURGUNDY, label="Domestic")
-        ax.barh(y - h/2, intl, height=h, color=ACCENT, label="International")
+        bars_dom = ax.barh(y + h/2, dom, height=h, color=BURGUNDY, label="Domestic", zorder=3)
+        bars_intl = ax.barh(y - h/2, intl, height=h, color=ACCENT, label="International", zorder=3)
+        ax.bar_label(bars_dom, labels=[_fmt_exact(v) for v in dom], fontsize=4.8, padding=2)
+        ax.bar_label(bars_intl, labels=[_fmt_exact(v) for v in intl], fontsize=4.8, padding=2)
         ax.legend(loc="lower right", frameon=False, fontsize=6, ncol=1)
+        ax.margins(x=0.18)  # headroom so labels on the longest bars aren't clipped
     else:
         total = dom + intl
-        ax.barh(y, total, height=0.55, color=BURGUNDY)
+        bars = ax.barh(y, total, height=0.55, color=BURGUNDY, zorder=3)
+        ax.bar_label(bars, labels=[_fmt_exact(v) for v in total], fontsize=5.2, padding=2)
+        ax.margins(x=0.14)
 
     ax.set_yticks(y)
     ax.set_yticklabels(names, fontsize=6.3)
