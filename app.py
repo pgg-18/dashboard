@@ -49,8 +49,34 @@ st.markdown(f"""
         background: {BURGUNDY}; color: #fff; padding: 0.28rem 0.6rem;
         margin: -15px -15px 0.3rem -15px; border-radius: 8px 8px 0 0;
     }}
-    .card-title {{ font-size: 0.8rem; font-weight: 700; line-height: 1.2; }}
+    .card-title {{ font-size: 0.8rem; font-weight: 700; line-height: 1.2; color: #fff; }}
     .card-date  {{ font-size: 0.62rem; color: #f0dcdf; line-height: 1.2; }}
+
+    /* header row WITH an embedded button: a hidden marker span right before
+       an st.columns() row lets us style that specific row via CSS (the
+       columns are real Streamlit elements, unlike a plain HTML div, so a
+       button/dialog-trigger can live inside one of them). The marker's own
+       stElementContainer is a sibling of stLayoutWrapper, which contains
+       stHorizontalBlock as a descendant (not a direct child) — hence :has()
+       plus a descendant selector rather than a simple + combinator. */
+    .hdr-row-marker {{ display: none; }}
+    div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"] {{
+        background: {BURGUNDY}; border-radius: 8px 8px 0 0;
+        margin: -15px -15px 0.3rem -15px; align-items: center;
+        padding: 0.2rem 0.5rem 0.2rem 0;
+    }}
+    div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] .card-title-wrap {{ padding-left: 0.6rem; }}
+    div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] {{
+        display: flex; justify-content: flex-end;
+    }}
+    div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] button {{
+        background: transparent !important; border: 1px solid rgba(255,255,255,0.55) !important;
+        color: #fff !important; font-size: 0.62rem !important; padding: 0.08rem 0.45rem !important;
+        min-height: 0 !important;
+    }}
+    div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] button:hover {{
+        background: rgba(255,255,255,0.2) !important; border-color: #fff !important;
+    }}
 
     .stat-grid {{ display: grid; gap: 0.28rem; }}
     .stat-box {{
@@ -89,17 +115,33 @@ def stat_boxes_html(items, cols, box_h_vh):
 
 
 def card_header(title, subtitle=None):
+    """Plain header, no button."""
     date_html = f'<div class="card-date">{subtitle}</div>' if subtitle else ""
     st.markdown(f'<div class="card-head"><div class="card-title">{title}</div>'
                 f'{date_html}</div>', unsafe_allow_html=True)
 
 
-def fetch_button(key, fetch_fn, on_success):
-    """Renders a small Fetch Data button; on click, calls fetch_fn() (which
-    must return whatever on_success expects), applies it via on_success(),
-    and reruns. On scraper.FetchError, shows the error and leaves existing
-    data untouched."""
-    if st.button("⟳ Fetch Data", key=f"fetch_{key}", help="Pull the latest figures from civilaviation.gov.in"):
+def card_header_with_button(title, subtitle, button_label, button_key, help_text=None):
+    """Header with a button embedded in the burgundy bar itself (right side),
+    so it doesn't need its own separate row — saves the vertical space a
+    standalone button row would take. Returns True if the button was clicked
+    this run."""
+    st.markdown('<span class="hdr-row-marker"></span>', unsafe_allow_html=True)
+    hl, hr = st.columns([0.68, 0.32])
+    with hl:
+        date_html = f'<div class="card-date">{subtitle}</div>' if subtitle else ""
+        st.markdown(f'<div class="card-title-wrap"><div class="card-title">{title}</div>'
+                    f'{date_html}</div>', unsafe_allow_html=True)
+    with hr:
+        clicked = st.button(button_label, key=button_key, help=help_text)
+    return clicked
+
+
+def handle_fetch(clicked, fetch_fn, on_success):
+    """Call after card_header_with_button(...) returns clicked=True: runs
+    fetch_fn(), applies the result via on_success(), reruns. On
+    scraper.FetchError, shows the error and leaves existing data untouched."""
+    if clicked:
         try:
             with st.spinner("Fetching..."):
                 result = fetch_fn()
@@ -123,15 +165,15 @@ left, right = st.columns([0.4, 0.6], gap="medium")
 # ============================================================ LEFT COL ===
 with left:
     with st.container(border=True):
-        card_header("Passengers &amp; Flights — Top 20 Airports (by Total PAX)",
-                     f"as on {store['pax_flights_as_of']}")
-        ctrl_l, ctrl_r = st.columns([0.6, 0.4])
-        with ctrl_l:
-            mode = st.radio("mode", ["Total", "Split"], horizontal=True,
-                             label_visibility="collapsed", key="pax_mode")
-        with ctrl_r:
-            if st.button("✎ Update Manually", key="edit_pax_flights"):
-                st.session_state["show_pax_editor"] = True
+        clicked = card_header_with_button(
+            "Passengers &amp; Flights — Top 20 Airports (by Total PAX)",
+            f"as on {store['pax_flights_as_of']}",
+            "✎ Update Manually", "edit_pax_flights")
+        if clicked:
+            st.session_state["show_pax_editor"] = True
+
+        mode = st.radio("mode", ["Total", "Split"], horizontal=True,
+                         label_visibility="collapsed", key="pax_mode")
 
         pax_fig = C.pax_flights_figure(store["top20_airports"], mode, "pax", "Passengers")
         flt_fig = C.pax_flights_figure(store["top20_airports"], mode, "flights", "Flights")
@@ -144,8 +186,9 @@ with left:
             st.plotly_chart(flt_fig, use_container_width=True, config={"displayModeBar": False}, key="flt_chart")
 
     with st.container(border=True):
-        card_header("Skilling by IGRUA", store["igrua_as_of"])
-        fetch_button("igrua", scraper.fetch_igrua,
+        clicked = card_header_with_button("Skilling by IGRUA", store["igrua_as_of"],
+                                           "⟳ Fetch Data", "fetch_igrua")
+        handle_fetch(clicked, scraper.fetch_igrua,
                      lambda r: ST.update_many({"igrua": r[0], "igrua_as_of": r[1]}))
         items = [(k, v, None) for k, v in store["igrua"].items()]
         st.markdown(stat_boxes_html(items, cols=2, box_h_vh=6.5), unsafe_allow_html=True)
@@ -155,15 +198,18 @@ with right:
     r1a, r1b = st.columns([0.36, 0.64], gap="medium")
     with r1a:
         with st.container(border=True):
-            card_header("Airports — by Category", store["airport_counts_as_of"])
-            fetch_button("airports", scraper.fetch_airport_counts,
+            clicked = card_header_with_button("Airports — by Category", store["airport_counts_as_of"],
+                                               "⟳ Fetch Data", "fetch_airports")
+            handle_fetch(clicked, scraper.fetch_airport_counts,
                          lambda r: ST.update_many({"airport_counts": r[0], "airport_counts_as_of": r[1]}))
             items = [(k, f"{v:,}", None) for k, v in store["airport_counts"].items()]
             st.markdown(stat_boxes_html(items, cols=2, box_h_vh=5.6), unsafe_allow_html=True)
     with r1b:
         with st.container(border=True):
-            card_header("Airline On-Time Performance — 6 Metros", f"as on {store['airline_day1_label']}")
-            fetch_button("airlines", scraper.fetch_airlines,
+            clicked = card_header_with_button(
+                "Airline On-Time Performance — 6 Metros", f"as on {store['airline_day1_label']}",
+                "⟳ Fetch Data", "fetch_airlines")
+            handle_fetch(clicked, scraper.fetch_airlines,
                          lambda r: ST.update_many({
                              "airlines": [
                                  {"name": item["name"], "day1": item["pct"],
@@ -181,21 +227,20 @@ with right:
     r2a, r2b = st.columns([0.42, 0.58], gap="medium")
     with r2a:
         with st.container(border=True):
-            card_header("Cargo Tonnage (MT)", store["cargo_as_of"])
-            top_l, top_r = st.columns([0.55, 0.45])
-            with top_l:
-                cmode = st.radio("cmode", ["Total", "Split"], horizontal=True,
-                                  label_visibility="collapsed", key="cargo_mode")
-            with top_r:
-                fetch_button("cargo", scraper.fetch_cargo,
-                             lambda r: ST.update_many({"cargo": r[0], "cargo_as_of": r[1]}))
+            clicked = card_header_with_button("Cargo Tonnage (MT)", store["cargo_as_of"],
+                                               "⟳ Fetch Data", "fetch_cargo")
+            handle_fetch(clicked, scraper.fetch_cargo,
+                         lambda r: ST.update_many({"cargo": r[0], "cargo_as_of": r[1]}))
+            cmode = st.radio("cmode", ["Total", "Split"], horizontal=True,
+                              label_visibility="collapsed", key="cargo_mode")
             cargo_img = C.cargo_chart(store["cargo"], cmode, figsize=(3.3, 1.55))
             st.markdown(f'<div class="chart-frame"><img src="data:image/png;base64,{cargo_img}"></div>',
                         unsafe_allow_html=True)
     with r2b:
         with st.container(border=True):
-            card_header("UDAN (RCS)", store["udan_as_of"])
-            fetch_button("udan", scraper.fetch_udan,
+            clicked = card_header_with_button("UDAN (RCS)", store["udan_as_of"],
+                                               "⟳ Fetch Data", "fetch_udan")
+            handle_fetch(clicked, scraper.fetch_udan,
                          lambda r: ST.update_many({"udan": r[0], "udan_as_of": r[1]}))
             u = store["udan"]
             items = [
@@ -209,15 +254,17 @@ with right:
             st.markdown(stat_boxes_html(items, cols=3, box_h_vh=8.5), unsafe_allow_html=True)
 
     with st.container(border=True):
-        card_header("Air Sewa Grievance", store["airsewa_as_of"])
-        fetch_button("airsewa", scraper.fetch_airsewa,
+        clicked = card_header_with_button("Air Sewa Grievance", store["airsewa_as_of"],
+                                           "⟳ Fetch Data", "fetch_airsewa")
+        handle_fetch(clicked, scraper.fetch_airsewa,
                      lambda r: ST.update_many({"airsewa": r[0], "airsewa_as_of": r[1]}))
         items = [(k, f"{v:,}", None) for k, v in store["airsewa"].items()]
         st.markdown(stat_boxes_html(items, cols=5, box_h_vh=5.5), unsafe_allow_html=True)
 
     with st.container(border=True):
-        card_header("Skilling by RGNAU", store["rgnau_as_of"])
-        fetch_button("rgnau", scraper.fetch_rgnau,
+        clicked = card_header_with_button("Skilling by RGNAU", store["rgnau_as_of"],
+                                           "⟳ Fetch Data", "fetch_rgnau")
+        handle_fetch(clicked, scraper.fetch_rgnau,
                      lambda r: ST.update_many({"rgnau": r[0], "rgnau_note": r[1], "rgnau_as_of": r[2]}))
         items = [(k, v, store["rgnau_note"] if k == "Number of Courses" else None)
                  for k, v in store["rgnau"].items()]
