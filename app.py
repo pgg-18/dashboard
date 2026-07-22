@@ -2,6 +2,20 @@
 AAI Daily Dashboard — single-screen, store-backed.
 
 Run with:  streamlit run app.py
+
+Data model: dashboard_store.json (via store.py), seeded from data.py on first
+run. Two ways to update it:
+  - "Fetch Data" buttons — scrape civilaviation.gov.in live (scraper.py) for
+    every section EXCEPT Pax & Flights, which has no per-airport figures on
+    that page.
+  - "Update Manually" (Pax & Flights only) — an editable table in a dialog.
+
+Card architecture note: charts/buttons now need to be REAL Streamlit
+elements (Plotly charts, st.button, st.data_editor can't be embedded in a
+raw HTML string — see the earlier lesson about st.markdown fragments not
+nesting). So every card is an st.container(border=True) with a burgundy
+header markdown at the top and native Streamlit content below, rather than
+the single-HTML-string card used for the purely-static version.
 """
 import re
 
@@ -16,11 +30,16 @@ import store as ST
 st.set_page_config(page_title="AAI Daily Dashboard", layout="wide",
                     initial_sidebar_state="collapsed")
 
-BURGUNDY = C.BURGUNDY
-ACCENT = C.ACCENT
+# Hardcoded locally to prevent AttributeError if the charts module misloads
+BURGUNDY = "#7a1f2b"
+ACCENT = "#e28f96"
 
 
 def fmt_asof(label):
+    """A stored as-of label sometimes already carries its own 'On'/'Till'
+    prefix (from a live fetch — scraper._section_date returns e.g. 'On 21
+    Jul 2026') and sometimes doesn't (seed defaults / a manually-typed
+    date). Normalize so it never shows 'as on On 21 Jul 2026'."""
     if re.match(r"^(on|till)\s", label, re.IGNORECASE):
         return label[0].upper() + label[1:]
     return f"as on {label}"
@@ -115,6 +134,7 @@ def stat_boxes_html(items, cols, box_h_vh):
 
 
 def card_header(title, subtitle=None):
+    """Plain header, no button."""
     st.markdown(f'<div class="card-head"><div class="card-title">{title}</div></div>',
                 unsafe_allow_html=True)
     if subtitle:
@@ -122,6 +142,7 @@ def card_header(title, subtitle=None):
 
 
 def card_header_with_button(title, subtitle, button_label, button_key, help_text=None):
+    """Header with a button embedded in the burgundy bar itself."""
     st.markdown('<span class="hdr-row-marker"></span>', unsafe_allow_html=True)
     hl, hr = st.columns([0.62, 0.38])
     with hl:
@@ -135,6 +156,9 @@ def card_header_with_button(title, subtitle, button_label, button_key, help_text
 
 
 def handle_fetch(clicked, fetch_fn, on_success):
+    """Call after card_header_with_button(...) returns clicked=True: runs
+    fetch_fn(), applies the result via on_success(), reruns. On
+    scraper.FetchError, shows the error and leaves existing data untouched."""
     if clicked:
         try:
             with st.spinner("Fetching..."):
@@ -162,7 +186,7 @@ with left:
         clicked = card_header_with_button(
             "Passengers &amp; Flights — Top 20 Airports (by Total PAX)",
             fmt_asof(store['pax_flights_as_of']),
-            "✎ Edit", "edit_pax_flights", help_text="Update manually")
+            "✎ Edit", "edit_pax_flights", help_text="Update manually — no per-airport data on civilaviation.gov.in")
         if clicked:
             st.session_state["show_pax_editor"] = True
 
@@ -181,11 +205,10 @@ with left:
 
     with st.container(border=True):
         clicked = card_header_with_button("Skilling by IGRUA", store["igrua_as_of"],
-                                           "⟳ Fetch", "fetch_igrua")
+                                           "⟳ Fetch", "fetch_igrua", help_text="Pull latest from civilaviation.gov.in")
         handle_fetch(clicked, scraper.fetch_igrua,
                      lambda r: ST.update_many({"igrua": r[0], "igrua_as_of": r[1]}))
         items = [(k, v, None) for k, v in store["igrua"].items()]
-        # Reduced vh
         st.markdown(stat_boxes_html(items, cols=2, box_h_vh=4.8), unsafe_allow_html=True)
 
 # =========================================================== RIGHT COL ===
@@ -194,17 +217,16 @@ with right:
     with r1a:
         with st.container(border=True):
             clicked = card_header_with_button("Airports — by Category", store["airport_counts_as_of"],
-                                               "⟳ Fetch", "fetch_airports")
+                                               "⟳ Fetch", "fetch_airports", help_text="Pull latest from civilaviation.gov.in")
             handle_fetch(clicked, scraper.fetch_airport_counts,
                          lambda r: ST.update_many({"airport_counts": r[0], "airport_counts_as_of": r[1]}))
             items = [(k, f"{v:,}", None) for k, v in store["airport_counts"].items()]
-            # Reduced vh
             st.markdown(stat_boxes_html(items, cols=2, box_h_vh=4.2), unsafe_allow_html=True)
     with r1b:
         with st.container(border=True):
             clicked = card_header_with_button(
                 "Airline On-Time Performance — 6 Metros", fmt_asof(store['airline_day1_label']),
-                "⟳ Fetch", "fetch_airlines")
+                "⟳ Fetch", "fetch_airlines", help_text="Pull latest from civilaviation.gov.in")
             handle_fetch(clicked, scraper.fetch_airlines,
                          lambda r: ST.update_many({
                              "airlines": [
@@ -215,7 +237,6 @@ with right:
                              "airline_day1_label": r[1] or "latest fetch",
                              "airline_day2_label": store["airline_day1_label"],
                          }))
-            # Reduced height param in figsize
             air_img = C.airlines_chart(store["airlines"], store["airline_day1_label"],
                                         store["airline_day2_label"], figsize=(6.2, 1.5))
             st.markdown(f'<div class="chart-frame"><img src="data:image/png;base64,{air_img}"></div>',
@@ -225,19 +246,18 @@ with right:
     with r2a:
         with st.container(border=True):
             clicked = card_header_with_button("Cargo Tonnage (MT)", store["cargo_as_of"],
-                                               "⟳ Fetch", "fetch_cargo")
+                                               "⟳ Fetch", "fetch_cargo", help_text="Pull latest from civilaviation.gov.in")
             handle_fetch(clicked, scraper.fetch_cargo,
                          lambda r: ST.update_many({"cargo": r[0], "cargo_as_of": r[1]}))
             cmode = st.radio("cmode", ["Total", "Split"], horizontal=True,
                               label_visibility="collapsed", key="cargo_mode")
-            # Reduced height param in figsize
             cargo_img = C.cargo_chart(store["cargo"], cmode, figsize=(3.3, 1.15))
             st.markdown(f'<div class="chart-frame"><img src="data:image/png;base64,{cargo_img}"></div>',
                         unsafe_allow_html=True)
     with r2b:
         with st.container(border=True):
             clicked = card_header_with_button("UDAN (RCS)", store["udan_as_of"],
-                                               "⟳ Fetch", "fetch_udan")
+                                               "⟳ Fetch", "fetch_udan", help_text="Pull latest from civilaviation.gov.in")
             handle_fetch(clicked, scraper.fetch_udan,
                          lambda r: ST.update_many({"udan": r[0], "udan_as_of": r[1]}))
             u = store["udan"]
@@ -249,26 +269,23 @@ with right:
                 ("Passengers", u["Passengers"], None),
                 ("Viability Gap Funding", u["Viability Gap Funding"], None),
             ]
-            # Reduced vh
             st.markdown(stat_boxes_html(items, cols=3, box_h_vh=5.8), unsafe_allow_html=True)
 
     with st.container(border=True):
         clicked = card_header_with_button("Air Sewa Grievance", store["airsewa_as_of"],
-                                           "⟳ Fetch", "fetch_airsewa")
+                                           "⟳ Fetch", "fetch_airsewa", help_text="Pull latest from civilaviation.gov.in")
         handle_fetch(clicked, scraper.fetch_airsewa,
                      lambda r: ST.update_many({"airsewa": r[0], "airsewa_as_of": r[1]}))
         items = [(k, f"{v:,}", None) for k, v in store["airsewa"].items()]
-        # Reduced vh
         st.markdown(stat_boxes_html(items, cols=5, box_h_vh=3.8), unsafe_allow_html=True)
 
     with st.container(border=True):
         clicked = card_header_with_button("Skilling by RGNAU", store["rgnau_as_of"],
-                                           "⟳ Fetch", "fetch_rgnau")
+                                           "⟳ Fetch", "fetch_rgnau", help_text="Pull latest from civilaviation.gov.in")
         handle_fetch(clicked, scraper.fetch_rgnau,
                      lambda r: ST.update_many({"rgnau": r[0], "rgnau_note": r[1], "rgnau_as_of": r[2]}))
         items = [(k, v, store["rgnau_note"] if k == "Number of Courses" else None)
                  for k, v in store["rgnau"].items()]
-        # Reduced vh
         st.markdown(stat_boxes_html(items, cols=4, box_h_vh=4.8), unsafe_allow_html=True)
 
 
