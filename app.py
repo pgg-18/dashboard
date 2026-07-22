@@ -1,187 +1,310 @@
 """
-Chart generation.
-  - Pax/Flights: interactive Plotly figure (hover shows the exact number per
-    bar — this is the one chart that needed real hover, per feedback).
-  - Airlines / Cargo: matplotlib, returned as base64 PNGs, embedded in the
-    custom HTML card grid in app.py (unchanged approach from before).
+AAI Daily Dashboard — single-screen, store-backed.
 
-All functions take data as explicit parameters now rather than importing
-data.py directly — the live values come from store.py (fetched or manually
-edited), data.py is only the seed default.
+Run with:  streamlit run app.py
 """
-import base64
-import io
+import re
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import numpy as np
-import plotly.graph_objects as go
+import pandas as pd
+import streamlit as st
 
-BURGUNDY = "#7a1f2b"
-BURGUNDY_LIGHT = "#b96b78"   # tint, used for "Outbound (Dom)" in cargo split
-ACCENT = "#e28f96"           # lighter red — secondary series
-ACCENT_LIGHT = "#f2cdd0"     # pale tint, used for "Inbound (Int)" in cargo split
-GRID = "#eeeeee"
-TEXT = "#333333"
+import charts as C
+import data as D
+import scraper
+import store as ST
 
-plt.rcParams.update({
-    "font.family": "sans-serif",
-    "font.size": 7,
-    "text.color": TEXT,
-    "axes.edgecolor": "#dddddd",
-    "axes.labelcolor": TEXT,
-    "xtick.color": TEXT,
-    "ytick.color": TEXT,
-})
+st.set_page_config(page_title="AAI Daily Dashboard", layout="wide",
+                    initial_sidebar_state="collapsed")
 
-DPI = 170
+BURGUNDY = C.BURGUNDY
+ACCENT = C.ACCENT
 
 
-def _fig_to_base64(fig, dpi=DPI):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
-                pad_inches=0.03, transparent=True)
-    plt.close(fig)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode("ascii")
+def fmt_asof(label):
+    if re.match(r"^(on|till)\s", label, re.IGNORECASE):
+        return label[0].upper() + label[1:]
+    return f"as on {label}"
+
+# ---------------------------------------------------------------- CSS ----
+st.markdown(f"""
+<style>
+    #MainMenu, footer, header {{visibility: hidden;}}
+    .block-container {{
+        padding: 0.2rem 1.1rem 0.1rem 1.1rem !important; /* Slightly reduced top/bottom padding */
+        max-width: 100% !important;
+    }}
+    
+    /* Reduced default vertical gaps to tighten layout safely */
+    div[data-testid="stVerticalBlock"] {{ gap: 0.2rem !important; }}
+    div[data-testid="stHorizontalBlock"] {{ gap: 0.6rem !important; }}
+
+    .dash-title {{ font-size: 1.25rem; font-weight: 800; color: {BURGUNDY}; margin: 0; }}
+    .dash-sub {{ font-size: 0.72rem; color: #888; margin: 0; }}
+
+    .card-head {{
+        background: {BURGUNDY}; color: #fff; padding: 0.28rem 0.6rem;
+        margin: -12px -12px 0 -12px; border-radius: 8px 8px 0 0;
+    }}
+    .card-title {{ font-size: 0.8rem; font-weight: 700; line-height: 1.2; color: #fff;
+                   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    .card-date-line {{ font-size: 0.62rem; color: #999; line-height: 1.15; margin: 1px 0 0.15rem 2px; }}
+
+    .hdr-row-marker {{ display: none; }}
+    div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"] {{
+        background: {BURGUNDY}; border-radius: 8px 8px 0 0;
+        margin: -12px -12px 0 -12px; align-items: center;
+        padding: 0.2rem 0.5rem 0.2rem 0;
+    }}
+    div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] .card-title-wrap {{
+        padding-left: 0.6rem; overflow: hidden;
+    }}
+    div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] {{
+        display: flex; justify-content: flex-end;
+    }}
+    div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] button {{
+        background: transparent !important; border: 1px solid rgba(255,255,255,0.55) !important;
+        color: #fff !important; font-size: 0.62rem !important; padding: 0.08rem 0.4rem !important;
+        min-height: 0 !important; white-space: nowrap !important;
+    }}
+    div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] button:hover {{
+        background: rgba(255,255,255,0.2) !important; border-color: #fff !important;
+    }}
+    div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] button p {{
+        white-space: nowrap !important;
+    }}
+
+    .stat-grid {{ display: grid; gap: 0.28rem; }}
+    .stat-box {{
+        border: 1px solid #ecdfe1; border-top: 3px solid {BURGUNDY};
+        border-radius: 6px; background: #fdf9f9; overflow: hidden;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; padding: 0.25rem 0.25rem;
+    }}
+    .stat-val {{ font-size: 0.86rem; font-weight: 800; color: #222; line-height: 1.15; }}
+    .stat-label {{ font-size: 0.58rem; color: #777; text-transform: uppercase;
+                   letter-spacing: 0.02em; line-height: 1.2; margin-top: 1px; }}
+    .stat-note {{ font-size: 0.48rem; color: #aaa; line-height: 1.05; margin-top: 1px; }}
+    .chart-frame {{ width: 100%; display: flex; align-items: center; justify-content: center; }}
+    .chart-frame img {{ max-width: 100%; max-height: 100%; }}
+
+    div[role="radiogroup"] {{ gap: 0.5rem !important; flex-direction: row !important; }}
+    div[role="radiogroup"] label {{ font-size: 0.74rem !important; }}
+
+    div[data-testid="stButton"] button {{
+        font-size: 0.68rem !important; padding: 0.15rem 0.55rem !important;
+        min-height: 0 !important; border-color: {BURGUNDY} !important; color: {BURGUNDY} !important;
+        white-space: nowrap !important;
+    }}
+    div[data-testid="stButton"] button:hover {{ background: {BURGUNDY} !important; color: #fff !important; }}
+</style>
+""", unsafe_allow_html=True)
 
 
-def _fmt_exact(n):
-    return f"{int(round(n)):,}"
+def stat_boxes_html(items, cols, box_h_vh):
+    boxes = ""
+    for label, value, note in items:
+        note_html = f'<div class="stat-note">{note}</div>' if note else ""
+        boxes += (f'<div class="stat-box" style="height:{box_h_vh}vh;">'
+                  f'<div class="stat-val">{value}</div>'
+                  f'<div class="stat-label">{label}</div>{note_html}</div>')
+    return f'<div class="stat-grid" style="grid-template-columns:repeat({cols},1fr);">{boxes}</div>'
 
 
-# ------------------------------------------------------------ Pax/Flights ---
-def pax_flights_figure(airports, mode, value_field_prefix, x_title):
-    """Interactive horizontal bar chart with hover tooltips.
-    airports: list of dicts with name + {prefix}_dom / {prefix}_intl-style
-              keys (dom_pax/intl_pax or dom_flights/intl_flights).
-    mode: 'Total' or 'Split'.
-    value_field_prefix: 'pax' or 'flights'.
-    """
-    names = [a["name"] for a in airports]
-    dom = [a[f"dom_{value_field_prefix}"] for a in airports]
-    intl = [a[f"intl_{value_field_prefix}"] for a in airports]
-    # reverse so the biggest ends up at the TOP of the horizontal chart
-    names_r = names[::-1]
-    dom_r = dom[::-1]
-    intl_r = intl[::-1]
+def card_header(title, subtitle=None):
+    st.markdown(f'<div class="card-head"><div class="card-title">{title}</div></div>',
+                unsafe_allow_html=True)
+    if subtitle:
+        st.markdown(f'<div class="card-date-line">{subtitle}</div>', unsafe_allow_html=True)
 
-    fig = go.Figure()
 
-    if mode == "Split":
-        fig.add_trace(go.Bar(
-            y=names_r, x=dom_r, name="Domestic", orientation="h",
-            marker_color=BURGUNDY,
-            text=[f"{v:,}" for v in dom_r], textposition="outside",
-            textfont=dict(size=8.5, color=TEXT), cliponaxis=False,
-            hovertemplate="%{y}<br>Domestic: %{x:,}<extra></extra>",
-        ))
-        fig.add_trace(go.Bar(
-            y=names_r, x=intl_r, name="International", orientation="h",
-            marker_color=ACCENT,
-            text=[f"{v:,}" for v in intl_r], textposition="outside",
-            textfont=dict(size=8.5, color=TEXT), cliponaxis=False,
-            hovertemplate="%{y}<br>International: %{x:,}<extra></extra>",
-        ))
-        barmode = "group"
-        max_val = max(dom_r + intl_r) if (dom_r + intl_r) else 1
-    else:
-        total_r = [d + i for d, i in zip(dom_r, intl_r)]
-        fig.add_trace(go.Bar(
-            y=names_r, x=total_r, orientation="h",
-            marker_color=BURGUNDY, showlegend=False,
-            text=[f"{v:,}" for v in total_r], textposition="outside",
-            textfont=dict(size=8.5, color=TEXT), cliponaxis=False,
-            hovertemplate="%{y}<br>Total: %{x:,}<extra></extra>",
-        ))
-        barmode = "group"
-        max_val = max(total_r) if total_r else 1
+def card_header_with_button(title, subtitle, button_label, button_key, help_text=None):
+    st.markdown('<span class="hdr-row-marker"></span>', unsafe_allow_html=True)
+    hl, hr = st.columns([0.62, 0.38])
+    with hl:
+        st.markdown(f'<div class="card-title-wrap"><div class="card-title">{title}</div></div>',
+                    unsafe_allow_html=True)
+    with hr:
+        clicked = st.button(button_label, key=button_key, help=help_text)
+    if subtitle:
+        st.markdown(f'<div class="card-date-line">{subtitle}</div>', unsafe_allow_html=True)
+    return clicked
 
-    fig.update_layout(
-        barmode=barmode,
-        margin=dict(l=4, r=55, t=4, b=4),
-        height=310,  # Reduced safely from 390 to prevent vertical overflow
-        plot_bgcolor="white",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(size=11, color=TEXT, family="sans-serif"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.01,
-                    xanchor="right", x=1, font=dict(size=10)),
-        hoverlabel=dict(bgcolor="white", font_size=12,
-                         bordercolor=BURGUNDY, font_color=TEXT),
-        bargap=0.28, bargroupgap=0.12,
+
+def handle_fetch(clicked, fetch_fn, on_success):
+    if clicked:
+        try:
+            with st.spinner("Fetching..."):
+                result = fetch_fn()
+            on_success(result)
+            st.rerun()
+        except scraper.FetchError as e:
+            st.error(f"Fetch failed: {e}")
+
+
+# ------------------------------------------------------------- HEADER ----
+store = ST.load()
+
+st.markdown(f"""
+<div class="dash-title">AAI Daily Dashboard</div>
+<div class="dash-sub">Live sections pull from civilaviation.gov.in &nbsp;•&nbsp;
+Pax &amp; Flights is manual-only (no per-airport figures on that page)</div>
+""", unsafe_allow_html=True)
+
+left, right = st.columns([0.4, 0.6], gap="medium")
+
+# ============================================================ LEFT COL ===
+with left:
+    with st.container(border=True):
+        clicked = card_header_with_button(
+            "Passengers &amp; Flights — Top 20 Airports (by Total PAX)",
+            fmt_asof(store['pax_flights_as_of']),
+            "✎ Edit", "edit_pax_flights", help_text="Update manually — no per-airport data on civilaviation.gov.in")
+        if clicked:
+            st.session_state["show_pax_editor"] = True
+
+        mode = st.radio("mode", ["Total", "Split"], horizontal=True,
+                         label_visibility="collapsed", key="pax_mode")
+
+        pax_fig = C.pax_flights_figure(store["top20_airports"], mode, "pax", "Passengers")
+        flt_fig = C.pax_flights_figure(store["top20_airports"], mode, "flights", "Flights")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown('<div style="text-align:center;font-size:0.7rem;font-weight:700;color:#888;margin:4px 0 2px 0;">PAX</div>', unsafe_allow_html=True)
+            st.plotly_chart(pax_fig, use_container_width=True, config={"displayModeBar": False}, key="pax_chart")
+        with c2:
+            st.markdown('<div style="text-align:center;font-size:0.7rem;font-weight:700;color:#888;margin:4px 0 2px 0;">FLIGHTS</div>', unsafe_allow_html=True)
+            st.plotly_chart(flt_fig, use_container_width=True, config={"displayModeBar": False}, key="flt_chart")
+
+    with st.container(border=True):
+        clicked = card_header_with_button("Skilling by IGRUA", store["igrua_as_of"],
+                                           "⟳ Fetch", "fetch_igrua", help_text="Pull latest from civilaviation.gov.in")
+        handle_fetch(clicked, scraper.fetch_igrua,
+                     lambda r: ST.update_many({"igrua": r[0], "igrua_as_of": r[1]}))
+        items = [(k, v, None) for k, v in store["igrua"].items()]
+        # Reduced vh
+        st.markdown(stat_boxes_html(items, cols=2, box_h_vh=4.8), unsafe_allow_html=True)
+
+# =========================================================== RIGHT COL ===
+with right:
+    r1a, r1b = st.columns([0.36, 0.64], gap="medium")
+    with r1a:
+        with st.container(border=True):
+            clicked = card_header_with_button("Airports — by Category", store["airport_counts_as_of"],
+                                               "⟳ Fetch", "fetch_airports", help_text="Pull latest from civilaviation.gov.in")
+            handle_fetch(clicked, scraper.fetch_airport_counts,
+                         lambda r: ST.update_many({"airport_counts": r[0], "airport_counts_as_of": r[1]}))
+            items = [(k, f"{v:,}", None) for k, v in store["airport_counts"].items()]
+            # Reduced vh
+            st.markdown(stat_boxes_html(items, cols=2, box_h_vh=4.2), unsafe_allow_html=True)
+    with r1b:
+        with st.container(border=True):
+            clicked = card_header_with_button(
+                "Airline On-Time Performance — 6 Metros", fmt_asof(store['airline_day1_label']),
+                "⟳ Fetch", "fetch_airlines", help_text="Pull latest from civilaviation.gov.in")
+            handle_fetch(clicked, scraper.fetch_airlines,
+                         lambda r: ST.update_many({
+                             "airlines": [
+                                 {"name": item["name"], "day1": item["pct"],
+                                  "day2": next((o["day1"] for o in store["airlines"] if o["name"] == item["name"]), 0)}
+                                 for item in r[0]
+                             ],
+                             "airline_day1_label": r[1] or "latest fetch",
+                             "airline_day2_label": store["airline_day1_label"],
+                         }))
+            # Reduced figsize 
+            air_img = C.airlines_chart(store["airlines"], store["airline_day1_label"],
+                                        store["airline_day2_label"], figsize=(6.2, 1.55))
+            st.markdown(f'<div class="chart-frame"><img src="data:image/png;base64,{air_img}"></div>',
+                        unsafe_allow_html=True)
+
+    r2a, r2b = st.columns([0.42, 0.58], gap="medium")
+    with r2a:
+        with st.container(border=True):
+            clicked = card_header_with_button("Cargo Tonnage (MT)", store["cargo_as_of"],
+                                               "⟳ Fetch", "fetch_cargo", help_text="Pull latest from civilaviation.gov.in")
+            handle_fetch(clicked, scraper.fetch_cargo,
+                         lambda r: ST.update_many({"cargo": r[0], "cargo_as_of": r[1]}))
+            cmode = st.radio("cmode", ["Total", "Split"], horizontal=True,
+                              label_visibility="collapsed", key="cargo_mode")
+            # Reduced figsize
+            cargo_img = C.cargo_chart(store["cargo"], cmode, figsize=(3.3, 1.15))
+            st.markdown(f'<div class="chart-frame"><img src="data:image/png;base64,{cargo_img}"></div>',
+                        unsafe_allow_html=True)
+    with r2b:
+        with st.container(border=True):
+            clicked = card_header_with_button("UDAN (RCS)", store["udan_as_of"],
+                                               "⟳ Fetch", "fetch_udan", help_text="Pull latest from civilaviation.gov.in")
+            handle_fetch(clicked, scraper.fetch_udan,
+                         lambda r: ST.update_many({"udan": r[0], "udan_as_of": r[1]}))
+            u = store["udan"]
+            items = [
+                ("Airports", u["Airports"], u.get("Airports_note")),
+                ("Routes", u["Routes"], None),
+                ("Operators", u["Operators"], None),
+                ("Flights", u["Flights"], None),
+                ("Passengers", u["Passengers"], None),
+                ("Viability Gap Funding", u["Viability Gap Funding"], None),
+            ]
+            # Reduced vh
+            st.markdown(stat_boxes_html(items, cols=3, box_h_vh=5.6), unsafe_allow_html=True)
+
+    with st.container(border=True):
+        clicked = card_header_with_button("Air Sewa Grievance", store["airsewa_as_of"],
+                                           "⟳ Fetch", "fetch_airsewa", help_text="Pull latest from civilaviation.gov.in")
+        handle_fetch(clicked, scraper.fetch_airsewa,
+                     lambda r: ST.update_many({"airsewa": r[0], "airsewa_as_of": r[1]}))
+        items = [(k, f"{v:,}", None) for k, v in store["airsewa"].items()]
+        # Reduced vh
+        st.markdown(stat_boxes_html(items, cols=5, box_h_vh=3.8), unsafe_allow_html=True)
+
+    with st.container(border=True):
+        clicked = card_header_with_button("Skilling by RGNAU", store["rgnau_as_of"],
+                                           "⟳ Fetch", "fetch_rgnau", help_text="Pull latest from civilaviation.gov.in")
+        handle_fetch(clicked, scraper.fetch_rgnau,
+                     lambda r: ST.update_many({"rgnau": r[0], "rgnau_note": r[1], "rgnau_as_of": r[2]}))
+        items = [(k, v, store["rgnau_note"] if k == "Number of Courses" else None)
+                 for k, v in store["rgnau"].items()]
+        # Reduced vh
+        st.markdown(stat_boxes_html(items, cols=4, box_h_vh=4.8), unsafe_allow_html=True)
+
+
+# ------------------------------------------------- MANUAL EDIT DIALOG ----
+@st.dialog("Update Pax & Flights manually", width="large")
+def pax_flights_editor():
+    st.caption("Edit any cell. Add rows with the + at the bottom, delete with the row checkbox + trash icon. "
+               "Rows are re-sorted by total PAX (domestic + international) on save.")
+    df = pd.DataFrame(store["top20_airports"])
+    edited = st.data_editor(
+        df, num_rows="dynamic", use_container_width=True, hide_index=True,
+        column_config={
+            "name": st.column_config.TextColumn("Airport", required=True),
+            "dom_pax": st.column_config.NumberColumn("Domestic PAX", min_value=0, step=1),
+            "intl_pax": st.column_config.NumberColumn("International PAX", min_value=0, step=1),
+            "dom_flights": st.column_config.NumberColumn("Domestic Flights", min_value=0, step=1),
+            "intl_flights": st.column_config.NumberColumn("International Flights", min_value=0, step=1),
+        },
+        key="pax_flights_data_editor",
     )
-    # extra headroom on the x-axis so the outside text labels have room
-    fig.update_xaxes(title=None, showgrid=True, gridcolor=GRID,
-                      tickfont=dict(size=9), rangemode="tozero",
-                      range=[0, max_val * 1.22])
-    fig.update_yaxes(title=None, tickfont=dict(size=9), automargin=True)
-    return fig
+    as_of = st.text_input("As on / till date", value=store["pax_flights_as_of"])
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Save", type="primary", use_container_width=True):
+            records = edited.fillna(0).to_dict("records")
+            records = [r for r in records if str(r.get("name", "")).strip()]
+            for r in records:
+                for k in ("dom_pax", "intl_pax", "dom_flights", "intl_flights"):
+                    r[k] = int(r.get(k, 0) or 0)
+                r["name"] = str(r["name"]).strip()
+            records.sort(key=lambda r: -(r["dom_pax"] + r["intl_pax"]))
+            ST.update_many({"top20_airports": records, "pax_flights_as_of": as_of.strip() or store["pax_flights_as_of"]})
+            st.session_state["show_pax_editor"] = False
+            st.rerun()
+    with c2:
+        if st.button("Cancel", use_container_width=True):
+            st.session_state["show_pax_editor"] = False
+            st.rerun()
 
 
-# --------------------------------------------------------------- Airlines ---
-def airlines_chart(airlines, day1_label, day2_label, figsize=(4.6, 2.5)):
-    names = [a["name"] for a in airlines]
-    day1 = np.array([a["day1"] for a in airlines]) * 100
-    day2 = np.array([a["day2"] for a in airlines]) * 100
-    x = np.arange(len(names))
-    w = 0.36
-
-    fig, ax = plt.subplots(figsize=figsize)
-    b1 = ax.bar(x - w/2, day1, width=w, color=BURGUNDY, label=day1_label)
-    b2 = ax.bar(x + w/2, day2, width=w, color=ACCENT, label=day2_label)
-    ax.bar_label(b1, fmt="%.0f%%", fontsize=5.6, padding=1)
-    ax.bar_label(b2, fmt="%.0f%%", fontsize=5.6, padding=1)
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(names, fontsize=6.4)
-    ax.set_ylim(0, 112)
-    ax.set_yticks([])
-    ax.spines[["top", "right", "left"]].set_visible(False)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.18), ncol=2,
-              frameon=False, fontsize=6.2)
-    fig.tight_layout(pad=0.2)
-    return _fig_to_base64(fig)
-
-
-# ------------------------------------------------------------------ Cargo ---
-def cargo_chart(cargo, mode, figsize=(3.3, 2.2)):
-    """cargo: dict with outbound_int, inbound_int, outbound_dom, inbound_dom"""
-    fig, ax = plt.subplots(figsize=figsize)
-
-    if mode == "Split":
-        labels = ["Outbound\n(Int)", "Inbound\n(Int)", "Outbound\n(Dom)", "Inbound\n(Dom)"]
-        values = [cargo["outbound_int"], cargo["inbound_int"],
-                  cargo["outbound_dom"], cargo["inbound_dom"]]
-        colors = [ACCENT, ACCENT_LIGHT, BURGUNDY, BURGUNDY_LIGHT]
-        x = np.arange(4)
-        bars = ax.bar(x, values, width=0.6, color=colors, zorder=3)
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, fontsize=6.0)
-
-        ymax = max(values) * 1.42
-        ax.set_ylim(0, ymax)
-        ax.axvspan(-0.5, 1.5, color=ACCENT_LIGHT, alpha=0.15, zorder=0)
-        ax.axvspan(1.5, 3.5, color=BURGUNDY_LIGHT, alpha=0.15, zorder=0)
-        ax.axvline(1.5, color="#ccc", linewidth=0.8, zorder=1)
-        ax.text(0.5, ymax * 0.94, "INTERNATIONAL", ha="center", va="top",
-                fontsize=6.3, fontweight="bold", color=ACCENT)
-        ax.text(2.5, ymax * 0.94, "DOMESTIC", ha="center", va="top",
-                fontsize=6.3, fontweight="bold", color=BURGUNDY)
-    else:
-        intl_total = cargo["outbound_int"] + cargo["inbound_int"]
-        dom_total = cargo["outbound_dom"] + cargo["inbound_dom"]
-        labels = ["International", "Domestic"]
-        values = [intl_total, dom_total]
-        colors = [ACCENT, BURGUNDY]
-        x = np.arange(2)
-        bars = ax.bar(x, values, width=0.45, color=colors)
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, fontsize=6.8)
-
-    ax.bar_label(bars, fmt="%d MT", fontsize=6.2, padding=2)
-    ax.set_yticks([])
-    ax.spines[["top", "right", "left"]].set_visible(False)
-    ax.margins(y=0.15)
-    fig.tight_layout(pad=0.2)
-    return _fig_to_base64(fig)
+if st.session_state.get("show_pax_editor"):
+    pax_flights_editor()
