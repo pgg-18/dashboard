@@ -105,6 +105,16 @@ def _parse_items(texts):
                 if not re.match(r"^(On|Till)\s+\d", texts[i]):
                     note = texts[i]
                     i += 1
+            # Some sections render "VALUE (note text)" as a SINGLE text node
+            # rather than two separate ones (this is what happened with
+            # RGNAU's "Number of courses" on the real site — the note ended
+            # up jammed into the value, showing as the box's big number).
+            # If we didn't already capture a separate note, and the value
+            # itself contains a parenthetical, split it out here.
+            if value and note is None and "(" in value:
+                value, _, rest = value.partition("(")
+                value = value.strip()
+                note = rest.rstrip(") ").strip() or None
             if english and value:
                 items.append((english.strip(), value.strip(), note))
         else:
