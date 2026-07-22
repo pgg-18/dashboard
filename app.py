@@ -116,7 +116,8 @@ st.markdown(f"""
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         text-align: center; padding: 0.25rem 0.25rem;
     }}
-    .stat-val {{ font-size: 0.86rem; font-weight: 800; color: #222; line-height: 1.15; }}
+    .stat-val {{ font-size: 0.86rem; font-weight: 800; color: #222; line-height: 1.15;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }}
     .stat-label {{ font-size: 0.58rem; color: #777; text-transform: uppercase;
                    letter-spacing: 0.02em; line-height: 1.2; margin-top: 1px; }}
     .stat-note {{ font-size: 0.48rem; color: #aaa; line-height: 1.05; margin-top: 1px; }}
@@ -141,7 +142,7 @@ def stat_boxes_html(items, cols, box_h_vh):
     for label, value, note in items:
         note_html = f'<div class="stat-note">{note}</div>' if note else ""
         boxes += (f'<div class="stat-box" style="height:{box_h_vh}vh;">'
-                  f'<div class="stat-val">{value}</div>'
+                  f'<div class="stat-val" title="{value}">{value}</div>'
                   f'<div class="stat-label">{label}</div>{note_html}</div>')
     return f'<div class="stat-grid" style="grid-template-columns:repeat({cols},1fr);">{boxes}</div>'
 
