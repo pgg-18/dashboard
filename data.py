@@ -1,12 +1,16 @@
 """
-All dashboard figures, hardcoded from:
+Seed defaults for the dashboard, hardcoded from:
   DAILY_DATASHEET_16_JULY_2026_UPDATED_9587.xlsx  ("Dashboard" sheet, cross-checked
   against the "Data" sheet). Traffic/cargo/airline/grievance figures are for
   15 Jul 2026 (published 16 Jul 2026). UDAN is cumulative till 30 Jun 2026.
   IGRUA is cumulative till 03 Jul 2026. RGNAU is cumulative till 08 Jul 2026.
+  Airport counts cross-checked live against civilaviation.gov.in, till 07 Jul 2026.
 
-This is a STATIC snapshot. To refresh, these values need to be updated by hand
-(or the sheet re-supplied) — there is no live scrape or upload in this build.
+These are SEED values only — store.py loads them into dashboard_store.json on
+first run. After that, the live dashboard state lives in the JSON file, kept
+up to date via each section's "Fetch" button (scraper.py, pulling from
+civilaviation.gov.in) or, for Pax & Flights, the "Update Manually" editor —
+there's no per-airport data on the live site, so that section is manual-only.
 """
 
 DATA_DATE = "15 Jul 2026"
@@ -42,13 +46,7 @@ TOP20_AIRPORTS = [
     {"name": "Patna",        "dom_pax": 4487,  "intl_pax": 0,     "dom_flights": 31,  "intl_flights": 0},    # total 4,487
 ]
 
-# --- Nationwide domestic vs international departures (feeds the flights-count context) ---
-NATIONWIDE = {
-    "domestic":      {"flights": 2659, "pax": 404544},
-    "international": {"flights": 545,  "pax": 93038},
-}
-
-# --- Airport count breakdown by category, "Data" sheet section 2 ("AIRPORT") ---
+# --- Airport count breakdown by category, cross-checked live 21 Jul 2026 ---
 AIRPORT_COUNTS = {
     "Operational": 165,
     "International": 36,
@@ -57,9 +55,12 @@ AIRPORT_COUNTS = {
     "Joint Venture": 9,
     "State Govt/Private": 30,
 }
+AIRPORT_COUNTS_AS_OF = "till 07 Jul 2026"
 
 # --- Airline on-time performance, 6 metros. Airlines with no data that day are
-#     simply left out (e.g. Air India Express had no figures on 15 Jul 2026). ---
+#     simply left out (e.g. Air India Express had no figures on 15 Jul 2026).
+#     "day1" is the most recent fetch, "day2" the one before it — each Fetch
+#     shifts day1 -> day2 and inserts the newly scraped value as day1. ---
 AIRLINES = [
     {"name": "IndiGo",       "day1": 0.9420, "day2": 0.9720},
     {"name": "Air India",    "day1": 0.9118, "day2": 0.9349},
@@ -70,14 +71,16 @@ AIRLINES = [
 AIRLINE_DAY1_LABEL = "15 Jul 2026"
 AIRLINE_DAY2_LABEL = "14 Jul 2026"
 
-# --- Cargo tonnage (MT), AAICLAS ---
+# --- Cargo tonnage (MT). Field names match the live site's own terminology
+# (civilaviation.gov.in uses Outbound/Inbound x International/Domestic, not
+# Export/Import) so the "Fetch" mapping is a direct 1:1, no reinterpretation. ---
 CARGO = {
-    "export": 441,
-    "import": 118,
-    "outbound": 37,
-    "inbound": 68,
+    "outbound_int": 441,  # was "export"
+    "inbound_int": 118,   # was "import"
+    "outbound_dom": 37,
+    "inbound_dom": 68,
 }
-# international = export + import, domestic = outbound + inbound
+CARGO_AS_OF = "15 Jul 2026"
 
 # --- UDAN (RCS), cumulative till 30 Jun 2026 ---
 UDAN = {
