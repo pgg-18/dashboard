@@ -17,6 +17,8 @@ nesting). So every card is an st.container(border=True) with a burgundy
 header markdown at the top and native Streamlit content below, rather than
 the single-HTML-string card used for the purely-static version.
 """
+import re
+
 import pandas as pd
 import streamlit as st
 
@@ -31,6 +33,16 @@ st.set_page_config(page_title="AAI Daily Dashboard", layout="wide",
 BURGUNDY = C.BURGUNDY
 ACCENT = C.ACCENT
 
+
+def fmt_asof(label):
+    """A stored as-of label sometimes already carries its own 'On'/'Till'
+    prefix (from a live fetch — scraper._section_date returns e.g. 'On 21
+    Jul 2026') and sometimes doesn't (seed defaults / a manually-typed
+    date). Normalize so it never shows 'as on On 21 Jul 2026'."""
+    if re.match(r"^(on|till)\s", label, re.IGNORECASE):
+        return label[0].upper() + label[1:]
+    return f"as on {label}"
+
 # ---------------------------------------------------------------- CSS ----
 st.markdown(f"""
 <style>
@@ -39,7 +51,7 @@ st.markdown(f"""
         padding: 0.3rem 1.1rem 0.3rem 1.1rem !important;
         max-width: 100% !important;
     }}
-    div[data-testid="stVerticalBlock"] {{ gap: 0.42rem; }}
+    div[data-testid="stVerticalBlock"] {{ gap: 0.36rem; }}
     div[data-testid="stHorizontalBlock"] {{ gap: 0.7rem; }}
 
     .dash-title {{ font-size: 1.25rem; font-weight: 800; color: {BURGUNDY}; margin: 0; }}
@@ -47,7 +59,7 @@ st.markdown(f"""
 
     .card-head {{
         background: {BURGUNDY}; color: #fff; padding: 0.28rem 0.6rem;
-        margin: -15px -15px 0 -15px; border-radius: 8px 8px 0 0;
+        margin: -12px -12px 0 -12px; border-radius: 8px 8px 0 0;
     }}
     .card-title {{ font-size: 0.8rem; font-weight: 700; line-height: 1.2; color: #fff;
                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
@@ -65,7 +77,7 @@ st.markdown(f"""
     .hdr-row-marker {{ display: none; }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"] {{
         background: {BURGUNDY}; border-radius: 8px 8px 0 0;
-        margin: -15px -15px 0 -15px; align-items: center;
+        margin: -12px -12px 0 -12px; align-items: center;
         padding: 0.2rem 0.5rem 0.2rem 0;
     }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] .card-title-wrap {{
@@ -181,7 +193,7 @@ with left:
     with st.container(border=True):
         clicked = card_header_with_button(
             "Passengers &amp; Flights — Top 20 Airports (by Total PAX)",
-            f"as on {store['pax_flights_as_of']}",
+            fmt_asof(store['pax_flights_as_of']),
             "✎ Edit", "edit_pax_flights", help_text="Update manually — no per-airport data on civilaviation.gov.in")
         if clicked:
             st.session_state["show_pax_editor"] = True
@@ -193,10 +205,10 @@ with left:
         flt_fig = C.pax_flights_figure(store["top20_airports"], mode, "flights", "Flights")
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown('<div style="text-align:center;font-size:0.68rem;color:#888;">PAX</div>', unsafe_allow_html=True)
+            st.markdown('<div style="text-align:center;font-size:0.7rem;font-weight:700;color:#888;margin:4px 0 2px 0;">PAX</div>', unsafe_allow_html=True)
             st.plotly_chart(pax_fig, use_container_width=True, config={"displayModeBar": False}, key="pax_chart")
         with c2:
-            st.markdown('<div style="text-align:center;font-size:0.68rem;color:#888;">FLIGHTS</div>', unsafe_allow_html=True)
+            st.markdown('<div style="text-align:center;font-size:0.7rem;font-weight:700;color:#888;margin:4px 0 2px 0;">FLIGHTS</div>', unsafe_allow_html=True)
             st.plotly_chart(flt_fig, use_container_width=True, config={"displayModeBar": False}, key="flt_chart")
 
     with st.container(border=True):
@@ -221,7 +233,7 @@ with right:
     with r1b:
         with st.container(border=True):
             clicked = card_header_with_button(
-                "Airline On-Time Performance — 6 Metros", f"as on {store['airline_day1_label']}",
+                "Airline On-Time Performance — 6 Metros", fmt_asof(store['airline_day1_label']),
                 "⟳ Fetch", "fetch_airlines", help_text="Pull latest from civilaviation.gov.in")
             handle_fetch(clicked, scraper.fetch_airlines,
                          lambda r: ST.update_many({
