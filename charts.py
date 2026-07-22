@@ -101,7 +101,7 @@ def pax_flights_figure(airports, mode, value_field_prefix, x_title):
     fig.update_layout(
         barmode=barmode,
         margin=dict(l=4, r=55, t=4, b=4),
-        height=460,
+        height=390,
         plot_bgcolor="white",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(size=11, color=TEXT, family="sans-serif"),
