@@ -16,16 +16,12 @@ import store as ST
 st.set_page_config(page_title="AAI Daily Dashboard", layout="wide",
                     initial_sidebar_state="collapsed")
 
-# Hardcoded locally to prevent Streamlit Cloud from accidentally importing the wrong 'charts' module
+# Hardcoded locally to prevent the Streamlit Cloud "charts" AttributeError
 BURGUNDY = "#7a1f2b"
 ACCENT = "#e28f96"
 
 
 def fmt_asof(label):
-    """A stored as-of label sometimes already carries its own 'On'/'Till'
-    prefix (from a live fetch — scraper._section_date returns e.g. 'On 21
-    Jul 2026') and sometimes doesn't (seed defaults / a manually-typed
-    date). Normalize so it never shows 'as on On 21 Jul 2026'."""
     if re.match(r"^(on|till)\s", label, re.IGNORECASE):
         return label[0].upper() + label[1:]
     return f"as on {label}"
@@ -82,14 +78,13 @@ st.markdown(f"""
         border-radius: 6px; background: #fdf9f9; overflow: hidden;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         text-align: center; 
-        padding: 0.45rem 0.25rem; /* Safe padding applied here */
-        min-height: 4.8rem; /* Boxes stretch organically if content is larger */
+        padding: 0.6rem 0.3rem; /* Using padding instead of fixed height */
+        min-height: 5.5rem; /* Safe minimum height; will expand if text is long */
     }}
-    .stat-val {{ font-size: 0.86rem; font-weight: 800; color: #222; line-height: 1.15; word-wrap: break-word; }}
+    .stat-val {{ font-size: 0.86rem; font-weight: 800; color: #222; line-height: 1.15; }}
     .stat-label {{ font-size: 0.58rem; color: #777; text-transform: uppercase;
                    letter-spacing: 0.02em; line-height: 1.2; margin-top: 1px; }}
     .stat-note {{ font-size: 0.48rem; color: #aaa; line-height: 1.05; margin-top: 1px; }}
-    
     .chart-frame {{ width: 100%; display: flex; align-items: center; justify-content: center; }}
     .chart-frame img {{ max-width: 100%; max-height: 100%; }}
 
@@ -107,7 +102,7 @@ st.markdown(f"""
 
 
 def stat_boxes_html(items, cols):
-    """Removed the hardcoded vh height parameter. Elements will now size correctly to their content."""
+    """Removed the rigid vh height requirement. Boxes size perfectly to content."""
     boxes = ""
     for label, value, note in items:
         note_html = f'<div class="stat-note">{note}</div>' if note else ""
@@ -118,7 +113,6 @@ def stat_boxes_html(items, cols):
 
 
 def card_header(title, subtitle=None):
-    """Plain header, no button."""
     st.markdown(f'<div class="card-head"><div class="card-title">{title}</div></div>',
                 unsafe_allow_html=True)
     if subtitle:
@@ -126,7 +120,6 @@ def card_header(title, subtitle=None):
 
 
 def card_header_with_button(title, subtitle, button_label, button_key, help_text=None):
-    """Header with a button embedded in the burgundy bar itself."""
     st.markdown('<span class="hdr-row-marker"></span>', unsafe_allow_html=True)
     hl, hr = st.columns([0.62, 0.38])
     with hl:
@@ -140,9 +133,6 @@ def card_header_with_button(title, subtitle, button_label, button_key, help_text
 
 
 def handle_fetch(clicked, fetch_fn, on_success):
-    """Call after card_header_with_button(...) returns clicked=True: runs
-    fetch_fn(), applies the result via on_success(), reruns. On
-    scraper.FetchError, shows the error and leaves existing data untouched."""
     if clicked:
         try:
             with st.spinner("Fetching..."):
