@@ -114,7 +114,7 @@ st.markdown(f"""
         border: 1px solid #ecdfe1; border-top: 3px solid {BURGUNDY};
         border-radius: 6px; background: #fdf9f9; overflow: hidden;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
-        text-align: center; padding: 0.25rem 0.25rem;
+        text-align: center; padding: 6px 6px;
     }}
     .stat-val {{ font-size: 0.86rem; font-weight: 800; color: #222; line-height: 1.15;
                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }}
@@ -137,11 +137,11 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
-def stat_boxes_html(items, cols, box_h_vh):
+def stat_boxes_html(items, cols, box_min_h_px=58):
     boxes = ""
     for label, value, note in items:
         note_html = f'<div class="stat-note">{note}</div>' if note else ""
-        boxes += (f'<div class="stat-box" style="height:{box_h_vh}vh;">'
+        boxes += (f'<div class="stat-box" style="min-height:{box_min_h_px}px;">'
                   f'<div class="stat-val" title="{value}">{value}</div>'
                   f'<div class="stat-label">{label}</div>{note_html}</div>')
     return f'<div class="stat-grid" style="grid-template-columns:repeat({cols},1fr);">{boxes}</div>'
@@ -229,7 +229,7 @@ with left:
         handle_fetch(clicked, scraper.fetch_igrua,
                      lambda r: ST.update_many({"igrua": r[0], "igrua_as_of": r[1]}))
         items = [(k, v, None) for k, v in store["igrua"].items()]
-        st.markdown(stat_boxes_html(items, cols=2, box_h_vh=5.8), unsafe_allow_html=True)
+        st.markdown(stat_boxes_html(items, cols=2, box_min_h_px=62), unsafe_allow_html=True)
 
 # =========================================================== RIGHT COL ===
 with right:
@@ -241,7 +241,7 @@ with right:
             handle_fetch(clicked, scraper.fetch_airport_counts,
                          lambda r: ST.update_many({"airport_counts": r[0], "airport_counts_as_of": r[1]}))
             items = [(k, f"{v:,}", None) for k, v in store["airport_counts"].items()]
-            st.markdown(stat_boxes_html(items, cols=2, box_h_vh=5.0), unsafe_allow_html=True)
+            st.markdown(stat_boxes_html(items, cols=2, box_min_h_px=56), unsafe_allow_html=True)
     with r1b:
         with st.container(border=True):
             clicked = card_header_with_button(
@@ -289,7 +289,7 @@ with right:
                 ("Passengers", u["Passengers"], None),
                 ("Viability Gap Funding", u["Viability Gap Funding"], None),
             ]
-            st.markdown(stat_boxes_html(items, cols=3, box_h_vh=6.8), unsafe_allow_html=True)
+            st.markdown(stat_boxes_html(items, cols=3, box_min_h_px=78), unsafe_allow_html=True)
 
     with st.container(border=True):
         clicked = card_header_with_button("Air Sewa Grievance", store["airsewa_as_of"],
@@ -297,7 +297,7 @@ with right:
         handle_fetch(clicked, scraper.fetch_airsewa,
                      lambda r: ST.update_many({"airsewa": r[0], "airsewa_as_of": r[1]}))
         items = [(k, f"{v:,}", None) for k, v in store["airsewa"].items()]
-        st.markdown(stat_boxes_html(items, cols=5, box_h_vh=4.4), unsafe_allow_html=True)
+        st.markdown(stat_boxes_html(items, cols=5, box_min_h_px=60), unsafe_allow_html=True)
 
     with st.container(border=True):
         clicked = card_header_with_button("Skilling by RGNAU", store["rgnau_as_of"],
@@ -306,7 +306,7 @@ with right:
                      lambda r: ST.update_many({"rgnau": r[0], "rgnau_note": r[1], "rgnau_as_of": r[2]}))
         items = [(k, v, store["rgnau_note"] if k == "Number of Courses" else None)
                  for k, v in store["rgnau"].items()]
-        st.markdown(stat_boxes_html(items, cols=4, box_h_vh=5.8), unsafe_allow_html=True)
+        st.markdown(stat_boxes_html(items, cols=4, box_min_h_px=70), unsafe_allow_html=True)
 
 
 # ------------------------------------------------- MANUAL EDIT DIALOG ----
