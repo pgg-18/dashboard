@@ -1,12 +1,13 @@
 """
-Chart generation. All charts are rendered with matplotlib and returned as
-base64 PNGs so they can be dropped straight into the custom HTML grid in app.py.
+Chart generation.
+  - Pax/Flights: interactive Plotly figure (hover shows the exact number per
+    bar — this is the one chart that needed real hover, per feedback).
+  - Airlines / Cargo: matplotlib, returned as base64 PNGs, embedded in the
+    custom HTML card grid in app.py (unchanged approach from before).
 
-Colour theme (matches the previous dashboard):
-  BURGUNDY = card headers / "domestic" series / primary accent
-  ACCENT   = "international" series / secondary accent — a lighter red,
-             the one extra accent colour, per "small accent palette, rest
-             everything burgundy"
+All functions take data as explicit parameters now rather than importing
+data.py directly — the live values come from store.py (fetched or manually
+edited), data.py is only the seed default.
 """
 import base64
 import io
@@ -15,13 +16,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-
-import data as D
+import plotly.graph_objects as go
 
 BURGUNDY = "#7a1f2b"
-BURGUNDY_LIGHT = "#b96b78"   # tint, used for "Outbound" in cargo split
-ACCENT = "#e28f96"           # lighter red — secondary series (lightened per feedback)
-ACCENT_LIGHT = "#f2cdd0"     # pale tint, used for "Import" in cargo split
+BURGUNDY_LIGHT = "#b96b78"   # tint, used for "Outbound (Dom)" in cargo split
+ACCENT = "#e28f96"           # lighter red — secondary series
+ACCENT_LIGHT = "#f2cdd0"     # pale tint, used for "Inbound (Int)" in cargo split
 GRID = "#eeeeee"
 TEXT = "#333333"
 
@@ -35,8 +35,7 @@ plt.rcParams.update({
     "ytick.color": TEXT,
 })
 
-
-DPI = 170  # exported so app.py can compute exact pixel dims for <img width/height>
+DPI = 170
 
 
 def _fig_to_base64(fig, dpi=DPI):
@@ -48,58 +47,70 @@ def _fig_to_base64(fig, dpi=DPI):
     return base64.b64encode(buf.read()).decode("ascii")
 
 
-def _fmt_k(n):
-    if n >= 1000:
-        return f"{n/1000:.0f}k"
-    return str(n)
-
-
 def _fmt_exact(n):
     return f"{int(round(n)):,}"
 
 
-def pax_or_flights_chart(field_prefix, mode, figsize=(3.6, 3.55)):
-    """field_prefix: 'pax' or 'flights'. mode: 'Total' or 'Split'."""
-    airports = D.TOP20_AIRPORTS
+# ------------------------------------------------------------ Pax/Flights ---
+def pax_flights_figure(airports, mode, value_field_prefix, x_title):
+    """Interactive horizontal bar chart with hover tooltips.
+    airports: list of dicts with name + {prefix}_dom / {prefix}_intl-style
+              keys (dom_pax/intl_pax or dom_flights/intl_flights).
+    mode: 'Total' or 'Split'.
+    value_field_prefix: 'pax' or 'flights'.
+    """
     names = [a["name"] for a in airports]
-    dom = np.array([a[f"dom_{field_prefix}"] for a in airports], dtype=float)
-    intl = np.array([a[f"intl_{field_prefix}"] for a in airports], dtype=float)
-    y = np.arange(len(names))[::-1]  # top of list at top of chart
+    dom = [a[f"dom_{value_field_prefix}"] for a in airports]
+    intl = [a[f"intl_{value_field_prefix}"] for a in airports]
+    # reverse so the biggest ends up at the TOP of the horizontal chart
+    names_r = names[::-1]
+    dom_r = dom[::-1]
+    intl_r = intl[::-1]
 
-    fig, ax = plt.subplots(figsize=figsize)
+    fig = go.Figure()
 
     if mode == "Split":
-        h = 0.38
-        bars_dom = ax.barh(y + h/2, dom, height=h, color=BURGUNDY, label="Domestic", zorder=3)
-        bars_intl = ax.barh(y - h/2, intl, height=h, color=ACCENT, label="International", zorder=3)
-        ax.bar_label(bars_dom, labels=[_fmt_exact(v) for v in dom], fontsize=4.8, padding=2)
-        ax.bar_label(bars_intl, labels=[_fmt_exact(v) for v in intl], fontsize=4.8, padding=2)
-        ax.legend(loc="lower right", frameon=False, fontsize=6, ncol=1)
-        ax.margins(x=0.18)  # headroom so labels on the longest bars aren't clipped
+        fig.add_trace(go.Bar(
+            y=names_r, x=dom_r, name="Domestic", orientation="h",
+            marker_color=BURGUNDY,
+            hovertemplate="%{y}<br>Domestic: %{x:,}<extra></extra>",
+        ))
+        fig.add_trace(go.Bar(
+            y=names_r, x=intl_r, name="International", orientation="h",
+            marker_color=ACCENT,
+            hovertemplate="%{y}<br>International: %{x:,}<extra></extra>",
+        ))
+        barmode = "group"
     else:
-        total = dom + intl
-        bars = ax.barh(y, total, height=0.55, color=BURGUNDY, zorder=3)
-        ax.bar_label(bars, labels=[_fmt_exact(v) for v in total], fontsize=5.2, padding=2)
-        ax.margins(x=0.14)
+        total_r = [d + i for d, i in zip(dom_r, intl_r)]
+        fig.add_trace(go.Bar(
+            y=names_r, x=total_r, orientation="h",
+            marker_color=BURGUNDY, showlegend=False,
+            hovertemplate="%{y}<br>Total: %{x:,}<extra></extra>",
+        ))
+        barmode = "group"
 
-    ax.set_yticks(y)
-    ax.set_yticklabels(names, fontsize=6.3)
-    ax.tick_params(axis="x", labelsize=6)
-    if (dom + intl).max() == 0:
-        # placeholder chart (no per-airport flight data yet): fixed clean axis
-        ax.set_xlim(0, 10)
-        ax.set_xticks([0, 2, 4, 6, 8, 10])
-    else:
-        ax.xaxis.set_major_formatter(lambda v, pos: _fmt_k(v))
-    ax.spines[["top", "right", "left"]].set_visible(False)
-    ax.grid(axis="x", color=GRID, linewidth=0.6)
-    ax.set_axisbelow(True)
-    fig.tight_layout(pad=0.2)
-    return _fig_to_base64(fig)
+    fig.update_layout(
+        barmode=barmode,
+        margin=dict(l=4, r=12, t=4, b=4),
+        height=460,
+        plot_bgcolor="white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(size=11, color=TEXT, family="sans-serif"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.01,
+                    xanchor="right", x=1, font=dict(size=10)),
+        hoverlabel=dict(bgcolor="white", font_size=12,
+                         bordercolor=BURGUNDY, font_color=TEXT),
+        bargap=0.28, bargroupgap=0.12,
+    )
+    fig.update_xaxes(title=None, showgrid=True, gridcolor=GRID,
+                      tickfont=dict(size=9), rangemode="tozero")
+    fig.update_yaxes(title=None, tickfont=dict(size=9), automargin=True)
+    return fig
 
 
-def airlines_chart(figsize=(4.6, 2.5)):
-    airlines = D.AIRLINES
+# --------------------------------------------------------------- Airlines ---
+def airlines_chart(airlines, day1_label, day2_label, figsize=(4.6, 2.5)):
     names = [a["name"] for a in airlines]
     day1 = np.array([a["day1"] for a in airlines]) * 100
     day2 = np.array([a["day2"] for a in airlines]) * 100
@@ -107,8 +118,8 @@ def airlines_chart(figsize=(4.6, 2.5)):
     w = 0.36
 
     fig, ax = plt.subplots(figsize=figsize)
-    b1 = ax.bar(x - w/2, day1, width=w, color=BURGUNDY, label=D.AIRLINE_DAY1_LABEL)
-    b2 = ax.bar(x + w/2, day2, width=w, color=ACCENT, label=D.AIRLINE_DAY2_LABEL)
+    b1 = ax.bar(x - w/2, day1, width=w, color=BURGUNDY, label=day1_label)
+    b2 = ax.bar(x + w/2, day2, width=w, color=ACCENT, label=day2_label)
     ax.bar_label(b1, fmt="%.0f%%", fontsize=5.6, padding=1)
     ax.bar_label(b2, fmt="%.0f%%", fontsize=5.6, padding=1)
 
@@ -123,38 +134,34 @@ def airlines_chart(figsize=(4.6, 2.5)):
     return _fig_to_base64(fig)
 
 
-def cargo_chart(mode, figsize=(3.3, 2.2)):
-    c = D.CARGO
+# ------------------------------------------------------------------ Cargo ---
+def cargo_chart(cargo, mode, figsize=(3.3, 2.2)):
+    """cargo: dict with outbound_int, inbound_int, outbound_dom, inbound_dom
+    (matches civilaviation.gov.in's own terminology)."""
     fig, ax = plt.subplots(figsize=figsize)
 
     if mode == "Split":
-        labels = ["Export", "Import", "Outbound", "Inbound"]
-        values = [c["export"], c["import"], c["outbound"], c["inbound"]]
-        # colour family signals the group: accent (red) = International,
-        # burgundy = Domestic — same language as the Pax/Flights split chart.
+        labels = ["Outbound\n(Int)", "Inbound\n(Int)", "Outbound\n(Dom)", "Inbound\n(Dom)"]
+        values = [cargo["outbound_int"], cargo["inbound_int"],
+                  cargo["outbound_dom"], cargo["inbound_dom"]]
         colors = [ACCENT, ACCENT_LIGHT, BURGUNDY, BURGUNDY_LIGHT]
         x = np.arange(4)
         bars = ax.bar(x, values, width=0.6, color=colors, zorder=3)
         ax.set_xticks(x)
-        ax.set_xticklabels(labels, fontsize=6.4)
+        ax.set_xticklabels(labels, fontsize=6.0)
 
         ymax = max(values) * 1.42
         ax.set_ylim(0, ymax)
-
-        # shaded bands + a divider so the Export/Import vs Outbound/Inbound
-        # grouping is visible even before reading the labels
         ax.axvspan(-0.5, 1.5, color=ACCENT_LIGHT, alpha=0.15, zorder=0)
         ax.axvspan(1.5, 3.5, color=BURGUNDY_LIGHT, alpha=0.15, zorder=0)
         ax.axvline(1.5, color="#ccc", linewidth=0.8, zorder=1)
-
-        # explicit group headers above each pair of bars
         ax.text(0.5, ymax * 0.94, "INTERNATIONAL", ha="center", va="top",
                 fontsize=6.3, fontweight="bold", color=ACCENT)
         ax.text(2.5, ymax * 0.94, "DOMESTIC", ha="center", va="top",
                 fontsize=6.3, fontweight="bold", color=BURGUNDY)
     else:
-        intl_total = c["export"] + c["import"]
-        dom_total = c["outbound"] + c["inbound"]
+        intl_total = cargo["outbound_int"] + cargo["inbound_int"]
+        dom_total = cargo["outbound_dom"] + cargo["inbound_dom"]
         labels = ["International", "Domestic"]
         values = [intl_total, dom_total]
         colors = [ACCENT, BURGUNDY]
