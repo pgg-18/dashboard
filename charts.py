@@ -19,9 +19,9 @@ import numpy as np
 import plotly.graph_objects as go
 
 BURGUNDY = "#7a1f2b"
-BURGUNDY_LIGHT = "#b96b78"   # tint, used for "Outbound (Dom)" in cargo split
-ACCENT = "#e28f96"           # lighter red — secondary series
-ACCENT_LIGHT = "#f2cdd0"     # pale tint, used for "Inbound (Int)" in cargo split
+BURGUNDY_LIGHT = "#b96b78"   
+ACCENT = "#e28f96"           
+ACCENT_LIGHT = "#f2cdd0"     
 GRID = "#eeeeee"
 TEXT = "#333333"
 
@@ -62,7 +62,7 @@ def pax_flights_figure(airports, mode, value_field_prefix, x_title):
     names = [a["name"] for a in airports]
     dom = [a[f"dom_{value_field_prefix}"] for a in airports]
     intl = [a[f"intl_{value_field_prefix}"] for a in airports]
-    # reverse so the biggest ends up at the TOP of the horizontal chart
+    
     names_r = names[::-1]
     dom_r = dom[::-1]
     intl_r = intl[::-1]
@@ -101,7 +101,7 @@ def pax_flights_figure(airports, mode, value_field_prefix, x_title):
     fig.update_layout(
         barmode=barmode,
         margin=dict(l=4, r=55, t=4, b=4),
-        height=390,
+        height=450,  # Increased to give 20 bars plenty of room to render
         plot_bgcolor="white",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(size=11, color=TEXT, family="sans-serif"),
@@ -111,8 +111,6 @@ def pax_flights_figure(airports, mode, value_field_prefix, x_title):
                          bordercolor=BURGUNDY, font_color=TEXT),
         bargap=0.28, bargroupgap=0.12,
     )
-    # extra headroom on the x-axis so the outside text labels have room and
-    # don't get squeezed against the right edge of the plot area
     fig.update_xaxes(title=None, showgrid=True, gridcolor=GRID,
                       tickfont=dict(size=9), rangemode="tozero",
                       range=[0, max_val * 1.22])
@@ -147,8 +145,7 @@ def airlines_chart(airlines, day1_label, day2_label, figsize=(4.6, 2.5)):
 
 # ------------------------------------------------------------------ Cargo ---
 def cargo_chart(cargo, mode, figsize=(3.3, 2.2)):
-    """cargo: dict with outbound_int, inbound_int, outbound_dom, inbound_dom
-    (matches civilaviation.gov.in's own terminology)."""
+    """cargo: dict with outbound_int, inbound_int, outbound_dom, inbound_dom"""
     fig, ax = plt.subplots(figsize=figsize)
 
     if mode == "Split":
