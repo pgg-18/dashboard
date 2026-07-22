@@ -2,20 +2,6 @@
 AAI Daily Dashboard — single-screen, store-backed.
 
 Run with:  streamlit run app.py
-
-Data model: dashboard_store.json (via store.py), seeded from data.py on first
-run. Two ways to update it:
-  - "Fetch Data" buttons — scrape civilaviation.gov.in live (scraper.py) for
-    every section EXCEPT Pax & Flights, which has no per-airport figures on
-    that page.
-  - "Update Manually" (Pax & Flights only) — an editable table in a dialog.
-
-Card architecture note: charts/buttons now need to be REAL Streamlit
-elements (Plotly charts, st.button, st.data_editor can't be embedded in a
-raw HTML string — see the earlier lesson about st.markdown fragments not
-nesting). So every card is an st.container(border=True) with a burgundy
-header markdown at the top and native Streamlit content below, rather than
-the single-HTML-string card used for the purely-static version.
 """
 import re
 
@@ -35,10 +21,6 @@ ACCENT = C.ACCENT
 
 
 def fmt_asof(label):
-    """A stored as-of label sometimes already carries its own 'On'/'Till'
-    prefix (from a live fetch — scraper._section_date returns e.g. 'On 21
-    Jul 2026') and sometimes doesn't (seed defaults / a manually-typed
-    date). Normalize so it never shows 'as on On 21 Jul 2026'."""
     if re.match(r"^(on|till)\s", label, re.IGNORECASE):
         return label[0].upper() + label[1:]
     return f"as on {label}"
@@ -47,48 +29,44 @@ def fmt_asof(label):
 st.markdown(f"""
 <style>
     #MainMenu, footer, header {{visibility: hidden;}}
+    /* Force strict single-screen behavior to prevent compression clipping */
+    html, body, .stApp {{ overflow: hidden !important; height: 100vh; }}
+    section[data-testid="stAppViewContainer"], .main {{ overflow: hidden !important; }}
+    
     .block-container {{
-        padding: 0.3rem 1.1rem 0.3rem 1.1rem !important;
+        padding: 0.15rem 1rem 0.1rem 1rem !important; /* Tighter master padding */
         max-width: 100% !important;
     }}
-    div[data-testid="stVerticalBlock"] {{ gap: 0.36rem; }}
-    div[data-testid="stHorizontalBlock"] {{ gap: 0.7rem; }}
+    /* Heavily squash native Streamlit gaps */
+    div[data-testid="stVerticalBlock"] {{ gap: 0.2rem !important; }}
+    div[data-testid="stHorizontalBlock"] {{ gap: 0.5rem !important; }}
 
-    .dash-title {{ font-size: 1.25rem; font-weight: 800; color: {BURGUNDY}; margin: 0; }}
-    .dash-sub {{ font-size: 0.72rem; color: #888; margin: 0; }}
+    .dash-title {{ font-size: 1.15rem; font-weight: 800; color: {BURGUNDY}; margin: 0; line-height: 1.2; }}
+    .dash-sub {{ font-size: 0.68rem; color: #888; margin: 0; margin-bottom: 0.2rem; }}
 
     .card-head {{
-        background: {BURGUNDY}; color: #fff; padding: 0.28rem 0.6rem;
+        background: {BURGUNDY}; color: #fff; padding: 0.2rem 0.5rem;
         margin: -12px -12px 0 -12px; border-radius: 8px 8px 0 0;
     }}
-    .card-title {{ font-size: 0.8rem; font-weight: 700; line-height: 1.2; color: #fff;
+    .card-title {{ font-size: 0.78rem; font-weight: 700; line-height: 1.2; color: #fff;
                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-    .card-date-line {{ font-size: 0.62rem; color: #999; line-height: 1.15; margin: 1px 0 0.15rem 2px; }}
+    .card-date-line {{ font-size: 0.6rem; color: #999; line-height: 1.15; margin: 2px 0 0.2rem 2px; }}
 
-    /* header row WITH an embedded button: a hidden marker span right before
-       an st.columns() row lets us style that specific row via CSS (the
-       columns are real Streamlit elements, unlike a plain HTML div, so a
-       button/dialog-trigger can live inside one of them). The marker's own
-       stElementContainer is a sibling of stLayoutWrapper, which contains
-       stHorizontalBlock as a descendant (not a direct child) — hence :has()
-       plus a descendant selector rather than a simple + combinator.
-       The date/subtitle is deliberately NOT in this bar — see
-       card_header_with_button()'s docstring for why. */
     .hdr-row-marker {{ display: none; }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"] {{
         background: {BURGUNDY}; border-radius: 8px 8px 0 0;
         margin: -12px -12px 0 -12px; align-items: center;
-        padding: 0.2rem 0.5rem 0.2rem 0;
+        padding: 0.15rem 0.5rem 0.15rem 0;
     }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] .card-title-wrap {{
-        padding-left: 0.6rem; overflow: hidden;
+        padding-left: 0.5rem; overflow: hidden;
     }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] {{
         display: flex; justify-content: flex-end;
     }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] button {{
         background: transparent !important; border: 1px solid rgba(255,255,255,0.55) !important;
-        color: #fff !important; font-size: 0.62rem !important; padding: 0.08rem 0.4rem !important;
+        color: #fff !important; font-size: 0.6rem !important; padding: 0.08rem 0.4rem !important;
         min-height: 0 !important; white-space: nowrap !important;
     }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] button:hover {{
@@ -98,22 +76,23 @@ st.markdown(f"""
         white-space: nowrap !important;
     }}
 
-    .stat-grid {{ display: grid; gap: 0.28rem; }}
+    .stat-grid {{ display: grid; gap: 0.25rem; }}
     .stat-box {{
         border: 1px solid #ecdfe1; border-top: 3px solid {BURGUNDY};
         border-radius: 6px; background: #fdf9f9; overflow: hidden;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
-        text-align: center; padding: 0.25rem 0.25rem;
+        text-align: center; padding: 0.15rem;
     }}
-    .stat-val {{ font-size: 0.86rem; font-weight: 800; color: #222; line-height: 1.15; }}
-    .stat-label {{ font-size: 0.58rem; color: #777; text-transform: uppercase;
+    .stat-val {{ font-size: 0.82rem; font-weight: 800; color: #222; line-height: 1.15; }}
+    .stat-label {{ font-size: 0.55rem; color: #777; text-transform: uppercase;
                    letter-spacing: 0.02em; line-height: 1.2; margin-top: 1px; }}
-    .stat-note {{ font-size: 0.48rem; color: #aaa; line-height: 1.05; margin-top: 1px; }}
-    .chart-frame {{ width: 100%; display: flex; align-items: center; justify-content: center; }}
-    .chart-frame img {{ max-width: 100%; max-height: 100%; }}
+    .stat-note {{ font-size: 0.46rem; color: #aaa; line-height: 1.05; margin-top: 1px; }}
+    
+    .chart-frame {{ width: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }}
+    .chart-frame img {{ max-width: 100%; height: auto; display: block; }}
 
-    div[role="radiogroup"] {{ gap: 0.5rem !important; flex-direction: row !important; }}
-    div[role="radiogroup"] label {{ font-size: 0.74rem !important; }}
+    div[role="radiogroup"] {{ gap: 0.4rem !important; flex-direction: row !important; }}
+    div[role="radiogroup"] label {{ font-size: 0.7rem !important; }}
 
     div[data-testid="stButton"] button {{
         font-size: 0.68rem !important; padding: 0.15rem 0.55rem !important;
@@ -136,7 +115,6 @@ def stat_boxes_html(items, cols, box_h_vh):
 
 
 def card_header(title, subtitle=None):
-    """Plain header, no button."""
     st.markdown(f'<div class="card-head"><div class="card-title">{title}</div></div>',
                 unsafe_allow_html=True)
     if subtitle:
@@ -144,13 +122,6 @@ def card_header(title, subtitle=None):
 
 
 def card_header_with_button(title, subtitle, button_label, button_key, help_text=None):
-    """Header with a button embedded in the burgundy bar itself (right side),
-    so it doesn't need its own separate row — saves the vertical space a
-    standalone button row would take. The date/subtitle is rendered as its
-    own line BELOW the bar (not inside it) — putting two lines of title text
-    in the bar while the button is only one line made the row heights
-    inconsistent across cards and let the subtitle spill outside the
-    coloured background. Returns True if the button was clicked this run."""
     st.markdown('<span class="hdr-row-marker"></span>', unsafe_allow_html=True)
     hl, hr = st.columns([0.62, 0.38])
     with hl:
@@ -164,9 +135,6 @@ def card_header_with_button(title, subtitle, button_label, button_key, help_text
 
 
 def handle_fetch(clicked, fetch_fn, on_success):
-    """Call after card_header_with_button(...) returns clicked=True: runs
-    fetch_fn(), applies the result via on_success(), reruns. On
-    scraper.FetchError, shows the error and leaves existing data untouched."""
     if clicked:
         try:
             with st.spinner("Fetching..."):
@@ -194,7 +162,7 @@ with left:
         clicked = card_header_with_button(
             "Passengers &amp; Flights — Top 20 Airports (by Total PAX)",
             fmt_asof(store['pax_flights_as_of']),
-            "✎ Edit", "edit_pax_flights", help_text="Update manually — no per-airport data on civilaviation.gov.in")
+            "✎ Edit", "edit_pax_flights", help_text="Update manually")
         if clicked:
             st.session_state["show_pax_editor"] = True
 
@@ -205,19 +173,20 @@ with left:
         flt_fig = C.pax_flights_figure(store["top20_airports"], mode, "flights", "Flights")
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown('<div style="text-align:center;font-size:0.7rem;font-weight:700;color:#888;margin:4px 0 2px 0;">PAX</div>', unsafe_allow_html=True)
+            st.markdown('<div style="text-align:center;font-size:0.7rem;font-weight:700;color:#888;margin:2px 0;">PAX</div>', unsafe_allow_html=True)
             st.plotly_chart(pax_fig, use_container_width=True, config={"displayModeBar": False}, key="pax_chart")
         with c2:
-            st.markdown('<div style="text-align:center;font-size:0.7rem;font-weight:700;color:#888;margin:4px 0 2px 0;">FLIGHTS</div>', unsafe_allow_html=True)
+            st.markdown('<div style="text-align:center;font-size:0.7rem;font-weight:700;color:#888;margin:2px 0;">FLIGHTS</div>', unsafe_allow_html=True)
             st.plotly_chart(flt_fig, use_container_width=True, config={"displayModeBar": False}, key="flt_chart")
 
     with st.container(border=True):
         clicked = card_header_with_button("Skilling by IGRUA", store["igrua_as_of"],
-                                           "⟳ Fetch", "fetch_igrua", help_text="Pull latest from civilaviation.gov.in")
+                                           "⟳ Fetch", "fetch_igrua")
         handle_fetch(clicked, scraper.fetch_igrua,
                      lambda r: ST.update_many({"igrua": r[0], "igrua_as_of": r[1]}))
         items = [(k, v, None) for k, v in store["igrua"].items()]
-        st.markdown(stat_boxes_html(items, cols=2, box_h_vh=5.8), unsafe_allow_html=True)
+        # Reduced vh
+        st.markdown(stat_boxes_html(items, cols=2, box_h_vh=4.8), unsafe_allow_html=True)
 
 # =========================================================== RIGHT COL ===
 with right:
@@ -225,16 +194,17 @@ with right:
     with r1a:
         with st.container(border=True):
             clicked = card_header_with_button("Airports — by Category", store["airport_counts_as_of"],
-                                               "⟳ Fetch", "fetch_airports", help_text="Pull latest from civilaviation.gov.in")
+                                               "⟳ Fetch", "fetch_airports")
             handle_fetch(clicked, scraper.fetch_airport_counts,
                          lambda r: ST.update_many({"airport_counts": r[0], "airport_counts_as_of": r[1]}))
             items = [(k, f"{v:,}", None) for k, v in store["airport_counts"].items()]
-            st.markdown(stat_boxes_html(items, cols=2, box_h_vh=5.0), unsafe_allow_html=True)
+            # Reduced vh
+            st.markdown(stat_boxes_html(items, cols=2, box_h_vh=4.2), unsafe_allow_html=True)
     with r1b:
         with st.container(border=True):
             clicked = card_header_with_button(
                 "Airline On-Time Performance — 6 Metros", fmt_asof(store['airline_day1_label']),
-                "⟳ Fetch", "fetch_airlines", help_text="Pull latest from civilaviation.gov.in")
+                "⟳ Fetch", "fetch_airlines")
             handle_fetch(clicked, scraper.fetch_airlines,
                          lambda r: ST.update_many({
                              "airlines": [
@@ -245,8 +215,9 @@ with right:
                              "airline_day1_label": r[1] or "latest fetch",
                              "airline_day2_label": store["airline_day1_label"],
                          }))
+            # Reduced height param in figsize
             air_img = C.airlines_chart(store["airlines"], store["airline_day1_label"],
-                                        store["airline_day2_label"], figsize=(6.2, 1.85))
+                                        store["airline_day2_label"], figsize=(6.2, 1.5))
             st.markdown(f'<div class="chart-frame"><img src="data:image/png;base64,{air_img}"></div>',
                         unsafe_allow_html=True)
 
@@ -254,18 +225,19 @@ with right:
     with r2a:
         with st.container(border=True):
             clicked = card_header_with_button("Cargo Tonnage (MT)", store["cargo_as_of"],
-                                               "⟳ Fetch", "fetch_cargo", help_text="Pull latest from civilaviation.gov.in")
+                                               "⟳ Fetch", "fetch_cargo")
             handle_fetch(clicked, scraper.fetch_cargo,
                          lambda r: ST.update_many({"cargo": r[0], "cargo_as_of": r[1]}))
             cmode = st.radio("cmode", ["Total", "Split"], horizontal=True,
                               label_visibility="collapsed", key="cargo_mode")
-            cargo_img = C.cargo_chart(store["cargo"], cmode, figsize=(3.3, 1.35))
+            # Reduced height param in figsize
+            cargo_img = C.cargo_chart(store["cargo"], cmode, figsize=(3.3, 1.15))
             st.markdown(f'<div class="chart-frame"><img src="data:image/png;base64,{cargo_img}"></div>',
                         unsafe_allow_html=True)
     with r2b:
         with st.container(border=True):
             clicked = card_header_with_button("UDAN (RCS)", store["udan_as_of"],
-                                               "⟳ Fetch", "fetch_udan", help_text="Pull latest from civilaviation.gov.in")
+                                               "⟳ Fetch", "fetch_udan")
             handle_fetch(clicked, scraper.fetch_udan,
                          lambda r: ST.update_many({"udan": r[0], "udan_as_of": r[1]}))
             u = store["udan"]
@@ -277,24 +249,27 @@ with right:
                 ("Passengers", u["Passengers"], None),
                 ("Viability Gap Funding", u["Viability Gap Funding"], None),
             ]
-            st.markdown(stat_boxes_html(items, cols=3, box_h_vh=6.8), unsafe_allow_html=True)
+            # Reduced vh
+            st.markdown(stat_boxes_html(items, cols=3, box_h_vh=5.8), unsafe_allow_html=True)
 
     with st.container(border=True):
         clicked = card_header_with_button("Air Sewa Grievance", store["airsewa_as_of"],
-                                           "⟳ Fetch", "fetch_airsewa", help_text="Pull latest from civilaviation.gov.in")
+                                           "⟳ Fetch", "fetch_airsewa")
         handle_fetch(clicked, scraper.fetch_airsewa,
                      lambda r: ST.update_many({"airsewa": r[0], "airsewa_as_of": r[1]}))
         items = [(k, f"{v:,}", None) for k, v in store["airsewa"].items()]
-        st.markdown(stat_boxes_html(items, cols=5, box_h_vh=4.4), unsafe_allow_html=True)
+        # Reduced vh
+        st.markdown(stat_boxes_html(items, cols=5, box_h_vh=3.8), unsafe_allow_html=True)
 
     with st.container(border=True):
         clicked = card_header_with_button("Skilling by RGNAU", store["rgnau_as_of"],
-                                           "⟳ Fetch", "fetch_rgnau", help_text="Pull latest from civilaviation.gov.in")
+                                           "⟳ Fetch", "fetch_rgnau")
         handle_fetch(clicked, scraper.fetch_rgnau,
                      lambda r: ST.update_many({"rgnau": r[0], "rgnau_note": r[1], "rgnau_as_of": r[2]}))
         items = [(k, v, store["rgnau_note"] if k == "Number of Courses" else None)
                  for k, v in store["rgnau"].items()]
-        st.markdown(stat_boxes_html(items, cols=4, box_h_vh=5.8), unsafe_allow_html=True)
+        # Reduced vh
+        st.markdown(stat_boxes_html(items, cols=4, box_h_vh=4.8), unsafe_allow_html=True)
 
 
 # ------------------------------------------------- MANUAL EDIT DIALOG ----
