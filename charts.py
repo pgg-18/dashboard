@@ -73,26 +73,34 @@ def pax_flights_figure(airports, mode, value_field_prefix, x_title):
         fig.add_trace(go.Bar(
             y=names_r, x=dom_r, name="Domestic", orientation="h",
             marker_color=BURGUNDY,
+            text=[f"{v:,}" for v in dom_r], textposition="outside",
+            textfont=dict(size=8.5, color=TEXT), cliponaxis=False,
             hovertemplate="%{y}<br>Domestic: %{x:,}<extra></extra>",
         ))
         fig.add_trace(go.Bar(
             y=names_r, x=intl_r, name="International", orientation="h",
             marker_color=ACCENT,
+            text=[f"{v:,}" for v in intl_r], textposition="outside",
+            textfont=dict(size=8.5, color=TEXT), cliponaxis=False,
             hovertemplate="%{y}<br>International: %{x:,}<extra></extra>",
         ))
         barmode = "group"
+        max_val = max(dom_r + intl_r) if (dom_r + intl_r) else 1
     else:
         total_r = [d + i for d, i in zip(dom_r, intl_r)]
         fig.add_trace(go.Bar(
             y=names_r, x=total_r, orientation="h",
             marker_color=BURGUNDY, showlegend=False,
+            text=[f"{v:,}" for v in total_r], textposition="outside",
+            textfont=dict(size=8.5, color=TEXT), cliponaxis=False,
             hovertemplate="%{y}<br>Total: %{x:,}<extra></extra>",
         ))
         barmode = "group"
+        max_val = max(total_r) if total_r else 1
 
     fig.update_layout(
         barmode=barmode,
-        margin=dict(l=4, r=12, t=4, b=4),
+        margin=dict(l=4, r=55, t=4, b=4),
         height=460,
         plot_bgcolor="white",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -103,8 +111,11 @@ def pax_flights_figure(airports, mode, value_field_prefix, x_title):
                          bordercolor=BURGUNDY, font_color=TEXT),
         bargap=0.28, bargroupgap=0.12,
     )
+    # extra headroom on the x-axis so the outside text labels have room and
+    # don't get squeezed against the right edge of the plot area
     fig.update_xaxes(title=None, showgrid=True, gridcolor=GRID,
-                      tickfont=dict(size=9), rangemode="tozero")
+                      tickfont=dict(size=9), rangemode="tozero",
+                      range=[0, max_val * 1.22])
     fig.update_yaxes(title=None, tickfont=dict(size=9), automargin=True)
     return fig
 
