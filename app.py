@@ -2,20 +2,6 @@
 AAI Daily Dashboard — single-screen, store-backed.
 
 Run with:  streamlit run app.py
-
-Data model: dashboard_store.json (via store.py), seeded from data.py on first
-run. Two ways to update it:
-  - "Fetch Data" buttons — scrape civilaviation.gov.in live (scraper.py) for
-    every section EXCEPT Pax & Flights, which has no per-airport figures on
-    that page.
-  - "Update Manually" (Pax & Flights only) — an editable table in a dialog.
-
-Card architecture note: charts/buttons now need to be REAL Streamlit
-elements (Plotly charts, st.button, st.data_editor can't be embedded in a
-raw HTML string — see the earlier lesson about st.markdown fragments not
-nesting). So every card is an st.container(border=True) with a burgundy
-header markdown at the top and native Streamlit content below, rather than
-the single-HTML-string card used for the purely-static version.
 """
 import re
 
@@ -30,8 +16,9 @@ import store as ST
 st.set_page_config(page_title="AAI Daily Dashboard", layout="wide",
                     initial_sidebar_state="collapsed")
 
-BURGUNDY = C.BURGUNDY
-ACCENT = C.ACCENT
+# Hardcoded locally to prevent Streamlit Cloud from accidentally importing the wrong 'charts' module
+BURGUNDY = "#7a1f2b"
+ACCENT = "#e28f96"
 
 
 def fmt_asof(label):
@@ -95,14 +82,14 @@ st.markdown(f"""
         border-radius: 6px; background: #fdf9f9; overflow: hidden;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         text-align: center; 
-        /* Removed fixed vh heights, replaced with natural padding */
-        padding: 0.5rem 0.25rem; 
-        min-height: 4.5rem;
+        padding: 0.45rem 0.25rem; /* Safe padding applied here */
+        min-height: 4.8rem; /* Boxes stretch organically if content is larger */
     }}
-    .stat-val {{ font-size: 0.86rem; font-weight: 800; color: #222; line-height: 1.15; word-break: break-word; }}
+    .stat-val {{ font-size: 0.86rem; font-weight: 800; color: #222; line-height: 1.15; word-wrap: break-word; }}
     .stat-label {{ font-size: 0.58rem; color: #777; text-transform: uppercase;
                    letter-spacing: 0.02em; line-height: 1.2; margin-top: 1px; }}
     .stat-note {{ font-size: 0.48rem; color: #aaa; line-height: 1.05; margin-top: 1px; }}
+    
     .chart-frame {{ width: 100%; display: flex; align-items: center; justify-content: center; }}
     .chart-frame img {{ max-width: 100%; max-height: 100%; }}
 
@@ -120,7 +107,7 @@ st.markdown(f"""
 
 
 def stat_boxes_html(items, cols):
-    """Removed the brittle box_h_vh parameter. Boxes now size dynamically to fit their content."""
+    """Removed the hardcoded vh height parameter. Elements will now size correctly to their content."""
     boxes = ""
     for label, value, note in items:
         note_html = f'<div class="stat-note">{note}</div>' if note else ""
@@ -154,7 +141,8 @@ def card_header_with_button(title, subtitle, button_label, button_key, help_text
 
 def handle_fetch(clicked, fetch_fn, on_success):
     """Call after card_header_with_button(...) returns clicked=True: runs
-    fetch_fn(), applies the result via on_success(), reruns."""
+    fetch_fn(), applies the result via on_success(), reruns. On
+    scraper.FetchError, shows the error and leaves existing data untouched."""
     if clicked:
         try:
             with st.spinner("Fetching..."):
