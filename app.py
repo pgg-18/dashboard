@@ -61,7 +61,7 @@ st.markdown(f"""
         background: {BURGUNDY}; color: #fff; padding: 0.4rem 0.6rem;
         border-radius: 6px; margin-bottom: 2px;
     }}
-    .card-title {{ font-size: 0.8rem; font-weight: 700; line-height: 1.2; color: #fff;
+    .card-title {{ font-size: 0.74rem; font-weight: 700; line-height: 1.2; color: #fff;
                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
     .card-date-line {{ font-size: 0.68rem; color: #666; line-height: 1.3;
                         margin: -4px 0 10px 2px; font-weight: 600; }}
@@ -166,7 +166,7 @@ def card_header_with_button(title, subtitle, button_label, button_key, help_text
     inconsistent across cards and let the subtitle spill outside the
     coloured background. Returns True if the button was clicked this run."""
     st.markdown('<span class="hdr-row-marker"></span>', unsafe_allow_html=True)
-    hl, hr = st.columns([0.62, 0.38])
+    hl, hr = st.columns([0.78, 0.22])
     with hl:
         st.markdown(f'<div class="card-title-wrap"><div class="card-title">{title}</div></div>',
                     unsafe_allow_html=True)
@@ -206,7 +206,7 @@ left, right = st.columns([0.4, 0.6], gap="medium")
 with left:
     with st.container(border=True):
         clicked = card_header_with_button(
-            "Passengers &amp; Flights — Top 20 Airports (by Total PAX)",
+            "Passengers &amp; Flights — Top 20 Airports",
             fmt_asof(store['pax_flights_as_of']),
             "✎ Edit", "edit_pax_flights", help_text="Update manually — no per-airport data on civilaviation.gov.in")
         if clicked:
@@ -238,7 +238,7 @@ with right:
     r1a, r1b = st.columns([0.36, 0.64], gap="medium")
     with r1a:
         with st.container(border=True):
-            clicked = card_header_with_button("Airports — by Category", store["airport_counts_as_of"],
+            clicked = card_header_with_button("Airports by Category", store["airport_counts_as_of"],
                                                "⟳ Fetch", "fetch_airports", help_text="Pull latest from civilaviation.gov.in")
             handle_fetch(clicked, scraper.fetch_airport_counts,
                          lambda r: ST.update_many({"airport_counts": r[0], "airport_counts_as_of": r[1]}))
@@ -247,7 +247,7 @@ with right:
     with r1b:
         with st.container(border=True):
             clicked = card_header_with_button(
-                "Airline On-Time Performance — 6 Metros", fmt_asof(store['airline_day1_label']),
+                "Airline On-Time Performance", fmt_asof(store['airline_day1_label']),
                 "⟳ Fetch", "fetch_airlines", help_text="Pull latest from civilaviation.gov.in")
             handle_fetch(clicked, scraper.fetch_airlines,
                          lambda r: ST.update_many({
