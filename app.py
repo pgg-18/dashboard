@@ -54,27 +54,17 @@ st.markdown(f"""
     div[data-testid="stVerticalBlock"] {{ gap: 0.36rem; }}
     div[data-testid="stHorizontalBlock"] {{ gap: 0.7rem; }}
 
-    /* Force a KNOWN padding on every card container, rather than guessing
-       Streamlit's own default (which is what caused the header to overshoot
-       and clip the date line on some deployments — the negative margin below
-       was calibrated against a padding value I'd measured locally, and that
-       apparently isn't the same everywhere). Now the negative margin exactly
-       cancels a value WE set, so it can't mismatch. */
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .hdr-row-marker) {{
-        padding: 14px !important;
-    }}
-
     .dash-title {{ font-size: 1.25rem; font-weight: 800; color: {BURGUNDY}; margin: 0; }}
     .dash-sub {{ font-size: 0.72rem; color: #888; margin: 0; }}
 
     .card-head {{
-        background: {BURGUNDY}; color: #fff; padding: 0.28rem 0.6rem;
-        margin: -14px -14px 0 -14px; border-radius: 8px 8px 0 0;
+        background: {BURGUNDY}; color: #fff; padding: 0.4rem 0.6rem;
+        border-radius: 6px; margin-bottom: 2px;
     }}
     .card-title {{ font-size: 0.8rem; font-weight: 700; line-height: 1.2; color: #fff;
                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
     .card-date-line {{ font-size: 0.68rem; color: #666; line-height: 1.3;
-                        margin: 8px 0 6px 2px; font-weight: 600; }}
+                        margin: -4px 0 10px 2px; font-weight: 600; }}
 
     /* header row WITH an embedded button: a hidden marker span right before
        an st.columns() row lets us style that specific row via CSS (the
@@ -84,15 +74,26 @@ st.markdown(f"""
        stHorizontalBlock as a descendant (not a direct child) — hence :has()
        plus a descendant selector rather than a simple + combinator.
        The date/subtitle is deliberately NOT in this bar — see
-       card_header_with_button()'s docstring for why. */
+       card_header_with_button()'s docstring for why.
+
+       NOTE: this used to bleed to the container's edges via a negative
+       margin sized to cancel the container's own padding, so the burgundy
+       bar would touch the card border flush. That fight with Streamlit's
+       internal flex layout (which kept re-imposing its own width/max-width
+       regardless of !important overrides on margin, width, flex-basis, AND
+       max-width — four different override attempts, all silently ignored)
+       turned out to be unwinnable from here. Simpler and actually reliable:
+       don't bleed at all. The header now sits at the same width as
+       everything else in the card, since nothing is fighting to extend it
+       past its natural box — width mismatch becomes structurally
+       impossible rather than something to calibrate. */
     .hdr-row-marker {{ display: none; }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"] {{
-        background: {BURGUNDY}; border-radius: 8px 8px 0 0;
-        margin: -14px -14px 0 -14px; align-items: stretch;
-        padding: 0.2rem 0.5rem 0.2rem 0;
+        background: {BURGUNDY}; border-radius: 6px; align-items: stretch;
+        padding: 0.3rem 0.5rem; margin-bottom: 2px;
     }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] .card-title-wrap {{
-        padding-left: 0.6rem; overflow: hidden;
+        padding-left: 0.4rem; overflow: hidden;
         display: flex; align-items: center; height: 100%; min-height: 28px;
     }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] {{
@@ -230,7 +231,7 @@ with left:
         handle_fetch(clicked, scraper.fetch_igrua,
                      lambda r: ST.update_many({"igrua": r[0], "igrua_as_of": r[1]}))
         items = [(k, v, None) for k, v in store["igrua"].items()]
-        st.markdown(stat_boxes_html(items, cols=2, box_min_h_px=62), unsafe_allow_html=True)
+        st.markdown(stat_boxes_html(items, cols=4, box_min_h_px=62), unsafe_allow_html=True)
 
 # =========================================================== RIGHT COL ===
 with right:
