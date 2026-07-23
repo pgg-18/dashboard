@@ -88,14 +88,15 @@ st.markdown(f"""
     .hdr-row-marker {{ display: none; }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"] {{
         background: {BURGUNDY}; border-radius: 8px 8px 0 0;
-        margin: -14px -14px 0 -14px; align-items: center;
+        margin: -14px -14px 0 -14px; align-items: stretch;
         padding: 0.2rem 0.5rem 0.2rem 0;
     }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] .card-title-wrap {{
         padding-left: 0.6rem; overflow: hidden;
+        display: flex; align-items: center; height: 100%; min-height: 28px;
     }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] {{
-        display: flex; justify-content: flex-end;
+        display: flex; justify-content: flex-end; align-items: center; height: 100%;
     }}
     div[data-testid="stElementContainer"]:has(.hdr-row-marker) + div[data-testid="stLayoutWrapper"] div[data-testid="stButton"] button {{
         background: transparent !important; border: 1px solid rgba(255,255,255,0.55) !important;
