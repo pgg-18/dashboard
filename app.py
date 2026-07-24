@@ -195,7 +195,6 @@ def handle_fetch(clicked, fetch_fn, on_success):
 store = ST.load()
 
 st.markdown(f"""
-<div class="dash-title">AAI Daily Dashboard</div>
 <div class="dash-sub">Live sections pull from civilaviation.gov.in &nbsp;•&nbsp;
 Pax &amp; Flights is manual-only (no per-airport figures on that page)</div>
 """, unsafe_allow_html=True)
