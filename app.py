@@ -194,10 +194,7 @@ def handle_fetch(clicked, fetch_fn, on_success):
 # ------------------------------------------------------------- HEADER ----
 store = ST.load()
 
-st.markdown(f"""
-<div class="dash-sub">Live sections pull from civilaviation.gov.in &nbsp;•&nbsp;
-Pax &amp; Flights is manual-only (no per-airport figures on that page)</div>
-""", unsafe_allow_html=True)
+st.markdown('<div class="dash-title">Aviation Dashboard</div>', unsafe_allow_html=True)
 
 left, right = st.columns([0.4, 0.6], gap="medium")
 
